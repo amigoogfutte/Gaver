@@ -168,7 +168,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.2";
+  const VERSION = "0.7.3";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -765,9 +765,9 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     setTimeout(()=>{ ta.focus(); ta.select(); },50);
   }
   async function delTekst(titel,tekst,url){
-    const alt=url? tekst+"\n"+url : tekst;
+    const alt=url || tekst;
     if(navigator.share && window.isSecureContext){ try{ await navigator.share(Object.assign({title:titel,text:tekst},url?{url}:{})); return; }catch(e){ if(e&&e.name==="AbortError") return; } }
-    if(await kopier(alt)){ toast(url?"Linket er kopieret – indsæt det i en besked":"Teksten er kopieret"); return; }
+    if(await kopier(alt)){ toast(url?"Linket er kopieret":"Teksten er kopieret"); return; }
     visTekst(titel,alt);
   }
   function oversigtTekst(){
@@ -783,9 +783,21 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     return el("details",{class:"card fold",open:indstAabne.has(noegle),ontoggle:e=>{ const d=e.target; if(d.open){ indstAabne=new Set([noegle]); $("ark").querySelectorAll("details.fold[open]").forEach(x=>{ if(x!==d) x.open=false; }); } else indstAabne.delete(noegle); }},
       el("summary",null,el("h2",null,titel)), el("div",{class:"foldInd"},...ind));
   }
+  // Linket til deling skal være Home Assistants adresse udefra (fx Nabu Casa / DuckDNS), ikke homeassistant.local.
+  let eksternAdr=null, eksternHentet=false;
+  const erLokal=h=>/(\.local|\.lan|\.home|\.internal)$|^localhost$|^(10|127)\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^\[?f[cd]/i.test(h);
+  async function hentEksternAdr(){
+    if(eksternHentet) return; eksternHentet=true;
+    if(!HA) return;
+    try{ const r=await api("/api/gaver/link"); if(r.ok){ const j=await r.json(); if(j.url) eksternAdr=String(j.url).replace(/\/+$/,""); } }catch(e){}
+    if(!eksternAdr){ try{ const r=await api("/api/config"); if(r.ok){ const c=await r.json(); if(c.external_url) eksternAdr=String(c.external_url).replace(/\/+$/,""); } }catch(e){ eksternHentet=false; return; } }
+    if(aabentArk) aabentArk();
+  }
+  const startLink=()=>{ const o=!erLokal(location.hostname)? location.origin : (eksternAdr||location.origin); return o+"/gaver-start"; };
+  const linkErLokal=()=>{ try{ return erLokal(new URL(startLink()).hostname); }catch(e){ return false; } };
   function indstArk(){
     indstAabne=new Set();
-    const link=location.origin+"/gaver-start";
+    hentEksternAdr();
     const trin=[
       ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det)."],
       ["Del listen","med knappen herunder. De andre logger ind med deres egen Home Assistant-bruger og vælger deres navn under ✋ Hvem er du?. Så kan de ikke se, hvad der er købt til dem."],
@@ -795,14 +807,18 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       ["Budget","Oversigten viser hvad du har brugt, og hvad alle har brugt. En person bliver rød, hvis du er over dit budget."],
       ["Kigger nogen med?","tryk på personen → 🙈 Skjul. Det gælder kun på denne telefon."]
     ];
-    const tegn=()=>{ const alle=allePersoner(); const mine=minePersoner(); return [
+    const tegn=()=>{ const link=startLink(); const alle=allePersoner(); const mine=minePersoner(); return [
       top("Indstillinger","Gaver v"+VERSION+(mig? " · "+mig.navn+(erAdmin()?" (administrator)":"") : "")),
       fold("hvem","✋ Hvem er du?",
         mine.length? el("div",null,"Du er ",el("b",null,mine.map(p=>p.navn).join(", ")),". Du kan ikke se, hvad der er købt til dig.") : el("div",{class:"muted"},"Du har ikke valgt dit navn. Du kan kun vælge én gang."),
         mine.length? null : el("button",{type:"button",class:"btn",onclick:hvemArk},"Vælg mit navn")),
       erAdmin()? adminKort() : null,
       fold("del","🔗 Del",
-        el("button",{type:"button",class:"btn primary",onclick:()=>delTekst("Gaver","Vores fælles gaveliste – log ind, tryk ✋ og vælg dit navn",link)},"Del gavelisten"),
+        el("div",{style:"font-size:14px;word-break:break-all;user-select:all;-webkit-user-select:all"},link),
+        linkErLokal()? el("div",{class:"muted"},"⚠️ Det her link virker kun hjemme på jeres eget net. Sæt en ekstern adresse i Home Assistant (Indstillinger → System → Netværk), så virker det også ude.") : null,
+        el("div",{class:"row",style:"display:flex;gap:8px"},
+          el("button",{type:"button",class:"btn",style:"flex:1",onclick:async()=>{ if(await kopier(link)) toast("Linket er kopieret"); else visTekst("Link til Gaver",link); }},"Kopiér link"),
+          el("button",{type:"button",class:"btn primary",style:"flex:1",onclick:()=>delTekst("Gaver","Vores fælles gaveliste – log ind, tryk ✋ og vælg dit navn",link)},"Del gavelisten")),
         el("div",{class:"muted"},"Alle deler den samme liste. Den der får linket skal have en bruger i Home Assistant (Indstillinger → Personer). Når de har valgt deres navn, kan de ikke se købene til sig selv – heller ikke hvis de leder i data."),
         rec(valgtAnl)? el("button",{type:"button",class:"btn",onclick:()=>delTekst(anlNavn(valgtAnl),oversigtTekst())},"Del oversigt over "+anlNavn(valgtAnl)+" som tekst") : null,
         rec(valgtAnl)? el("button",{type:"button",class:"btn",onclick:()=>delTekst(anlNavn(valgtAnl),listeTekst())},"Del indkøbsliste som tekst") : null,

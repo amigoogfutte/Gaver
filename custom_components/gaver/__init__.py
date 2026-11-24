@@ -359,6 +359,26 @@ class BrugereView(HomeAssistantView):
         return self.json({"ok": True})
 
 
+class LinkView(HomeAssistantView):
+    """Home Assistants adresse udefra (egen ekstern adresse eller Nabu Casa), til del-linket."""
+
+    url = "/api/gaver/link"
+    name = "api:gaver:link"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+
+    async def get(self, request: web.Request) -> web.Response:
+        from homeassistant.helpers.network import NoURLAvailableError, get_url
+
+        try:
+            base = get_url(self.hass, allow_internal=False, allow_ip=False)
+        except NoURLAvailableError:
+            base = None
+        return self.json({"url": base})
+
+
 class AppRedirectView(HomeAssistantView):
     """Kort adresse: /gaver-start → appen."""
 
@@ -379,7 +399,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not data.get("http_registered"):
         # HTTP-ruter kan ikke fjernes igen, så de registreres kun én gang pr. opstart.
         await hass.http.async_register_static_paths([StaticPathConfig(APP_URL, str(WWW), False)])
-        for view in (SyncView(hass, store), MigView(hass, store), BrugereView(hass, store), AppRedirectView()):
+        for view in (SyncView(hass, store), MigView(hass, store), BrugereView(hass, store), LinkView(hass), AppRedirectView()):
             hass.http.register_view(view)
         data["http_registered"] = True
 
