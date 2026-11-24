@@ -112,6 +112,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   <!-- ===== Oversigt ===== -->
   <section id="v-oversigt">
     <div class="card hidden" id="hvemKort"></div>
+    <div id="invKort"></div>
     <div class="chips" id="anlChips" style="margin-top:10px"></div>
     <div class="card" id="anlKort"></div>
     <div class="card">
@@ -161,7 +162,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.6.0";
+  const VERSION = "0.7.0";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -249,6 +250,20 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const brugtMod = (pid,aid) => { const b=budgetInfo(pid,aid); const g=b? b.gruppe : [migId()]; return sumPris(koeb(pid,aid).filter(k=>g.includes(k.koebtAf))); };
   const brugerNavn = uid => uid===migId()? "dig" : ((brugere||[]).find(b=>b.id===uid)||{}).navn || "en anden";
   const deltTekst = b => b&&b.delt? "Fælles med "+b.gruppe.filter(u=>u!==migId()).map(brugerNavn).join(", ") : "";
+  const venterTekst = r => r&&(r.inviteret||[]).length? "⏳ Venter på at "+ogListe(r.inviteret.map(u=>navnPaa(u)||"en bruger"))+" godkender" : "";
+  // Invitationer til at dele et budget med mig
+  const invitationer = () => [...levende("pbud"),...levende("budget")].filter(r=>(r.inviteret||[]).includes(migId()));
+  function invKort(){
+    const inv=invitationer().filter(r=>rec(r.personId));
+    $("invKort").replaceChildren(...inv.map(r=>el("div",{class:"card"},
+      el("h2",null,"👥 Fælles budget?"),
+      el("div",null, el("b",null,r.ejerNavn||navnPaa(r.bruger)||"En bruger")," vil dele budgettet for ",el("b",null,personNavn(r.personId)),
+        r.kind==="budget"? " til "+anlNavn(r.anlId) : " (alle anledninger)"," med dig – "+kr(r.beloeb)+(r.kind==="pbud"?" pr. anledning":"")+"."),
+      el("div",{class:"muted"},"Godkender du, kan I begge se og rette budgettet, og jeres køb tæller sammen og står som købt af jer begge."),
+      el("div",{class:"row"},
+        el("button",{type:"button",class:"btn ok",onclick:()=>{ put(r.id,Object.assign({},r,{deltMed:[...(r.deltMed||[]),migId()],inviteret:(r.inviteret||[]).filter(u=>u!==migId())})); toast("Budgettet er nu fælles"); }},"Godkend"),
+        el("button",{type:"button",class:"btn",onclick:()=>{ put(r.id,Object.assign({},r,{deltMed:(r.deltMed||[]).filter(u=>u!==migId()),inviteret:(r.inviteret||[]).filter(u=>u!==migId())})); toast("Afvist"); }},"Afvis")))));
+  }
   const personNavn = id => { const p=rec(id); return p?p.navn:"(slettet person)"; };
   const anlNavn = id => { const a=rec(id); return a?a.navn:"(slettet anledning)"; };
   const ogListe = xs => xs.length<2? (xs[0]||"") : xs.slice(0,-1).join(", ")+" og "+xs[xs.length-1];
@@ -295,9 +310,9 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   function tegnChips(boks){
     const gamle=anledninger().filter(udloebet);
     const vis=anledninger().filter(a=>!udloebet(a) || visTidligere || a.id===valgtAnl);
-    boks.replaceChildren(...vis.map(a=>el("button",{type:"button","aria-pressed":String(a.id===valgtAnl),onclick:()=>vaelgAnl(a.id)},(udloebet(a)?"📦 ":"")+a.navn)),
+    boks.replaceChildren(...[...vis.map(a=>el("button",{type:"button","aria-pressed":String(a.id===valgtAnl),onclick:()=>vaelgAnl(a.id)},(udloebet(a)?"📦 ":"")+a.navn)),
       gamle.length? el("button",{type:"button",class:"ny",onclick:()=>{ visTidligere=!visTidligere; renderAll(); }},visTidligere? "Skjul arkiv" : "📦 Arkiv ("+gamle.length+")") : null,
-      el("button",{type:"button",class:"ny",onclick:()=>anlArk(null)},"+ Anledning"));
+      el("button",{type:"button",class:"ny",onclick:()=>anlArk(null)},"+ Anledning")].filter(Boolean));
     const v=boks.querySelector('[aria-pressed="true"]'); if(v) requestAnimationFrame(()=>{ try{ v.scrollIntoView({block:"nearest",inline:"center"}); }catch(e){} });
   }
 
@@ -312,7 +327,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   }
 
   function renderOversigt(){
-    tegnChips($("anlChips")); hvemErDuKort();
+    tegnChips($("anlChips")); hvemErDuKort(); invKort();
     const a=rec(valgtAnl); const k=$("anlKort");
     if(!a){ k.replaceChildren(el("div",{class:"empty"},"Opret en anledning for at komme i gang.")); $("ovListe").replaceChildren(); $("ovUden").classList.add("hidden"); $("ovAntal").textContent=""; return; }
     const ps=personer().filter(p=>!erMig(p.id));
@@ -470,6 +485,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
         return el("div",{class:"sektion"},
           el("div",{class:"sekhead"}, el("h3",null,a.navn), el("span",null, el("b",null,kr(s)), b? el("span",{class:"muted"}," / "+kr(b)) : null)),
           bi&&bi.delt? el("div",{class:"muted"},"👥 "+deltTekst(bi)+" – jeres køb tæller sammen") : null,
+          bi&&venterTekst(bi.rec)? el("div",{class:"muted"},venterTekst(bi.rec)) : null,
           alle>s? el("div",{class:"muted"},"Alle i alt: "+kr(alle)) : null,
           b? el("div",{class:"bar"+(s>b?" over":"")}, el("i",{style:"width:"+Math.min(100,s/b*100).toFixed(1)+"%"})) : null,
           ...gs.map(g=>{ const ks=koebTil(g.id); const hvem=[...new Set(ks.map(koeberNavn))];
@@ -508,15 +524,17 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 
   // --- vælg hvem et budget deles med ---
   function delVaelger(rec0, pid){
-    const sel=new Set(rec0? [rec0.bruger,...(rec0.deltMed||[])].filter(u=>u!==migId()) : []);
+    const sel=new Set(rec0? [rec0.bruger,...(rec0.deltMed||[]),...(rec0.inviteret||[])].filter(u=>u!==migId()) : []);
+    const venter=new Set(rec0? rec0.inviteret||[] : []);
     const box=el("div",{class:"chips",style:"flex-wrap:wrap"});
     const tegn=()=>{
       if(brugere===null && !brugereFejl){ box.replaceChildren(el("span",{class:"muted"},"Henter brugere …")); hentBrugere(true).then(tegn); return; }
       if(brugereFejl){ box.replaceChildren(el("span",{class:"muted"},brugereFejl)); return; }
       const p=rec(pid);
-      const andre=(brugere||[]).filter(b=>b.id!==migId() && !(p&&p.brugerId===b.id));
-      box.replaceChildren(...(andre.length? andre.map(b=>el("button",{type:"button","aria-pressed":String(sel.has(b.id)),onclick:()=>{ sel.has(b.id)?sel.delete(b.id):sel.add(b.id); tegn(); }},(sel.has(b.id)?"👥 ":"")+b.navn))
-        : [el("span",{class:"muted"},"Der er ingen andre brugere endnu.")]));
+      const andre=(brugere||[]).filter(b=>b.id!==migId() && !(p&&p.brugerId===b.id) && (!b.skjulIDeling || sel.has(b.id)));
+      box.replaceChildren(...(andre.length? andre.map(b=>el("button",{type:"button","aria-pressed":String(sel.has(b.id)),onclick:()=>{ sel.has(b.id)?sel.delete(b.id):sel.add(b.id); tegn(); }},(sel.has(b.id)? (venter.has(b.id)?"⏳ ":"👥 ") : "")+b.navn))
+        : [el("span",{class:"muted"},"Der er ingen andre brugere endnu.")]),
+        el("div",{class:"muted",style:"width:100%;font-size:13px"},"Den du vælger, skal godkende, før budgettet er fælles."));
     };
     tegn();
     // returnér {bruger, deltMed} til posten
@@ -799,17 +817,18 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     catch(e){ brugereFejl="Kunne ikke hente brugerne – prøv igen, når der er forbindelse."; }
     if(!stille && aabentArk) aabentArk();
   }
-  async function saetAdmin(b,v){
-    try{ const r=await api("/api/gaver/brugere",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:b.id,admin:v})}); if(!r.ok) throw new Error(r.status);
-      toast(b.navn+(v?" er nu administrator":" er ikke længere administrator")); }catch(e){ toast("Det lykkedes ikke – prøv igen"); }
+  async function saetBruger(b,felter,besked){
+    try{ const r=await api("/api/gaver/brugere",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({id:b.id},felter))}); if(!r.ok) throw new Error(r.status);
+      toast(besked); }catch(e){ toast("Det lykkedes ikke – prøv igen"); }
     hentBrugere();
   }
+  const saetAdmin=(b,v)=>saetBruger(b,{admin:v},b.navn+(v?" er nu administrator":" er ikke længere administrator"));
   function adminKort(){
     if(brugere===null && !brugereFejl){ hentBrugere(); }
     const claimed=allePersoner().filter(p=>p.brugerId);
     return el("div",{class:"card"},
       el("h2",null,"🔑 Administrator"),
-      el("div",{class:"muted"},"Kun administratorer kan åbne for \"det er mig\" igen, slette personer og anledninger, og vælge andre administratorer."),
+      el("div",{class:"muted"},"Kun administratorer kan åbne for \"det er mig\" igen, slette personer og anledninger, vælge andre administratorer og bestemme, hvem man kan dele budget med."),
       el("h3",null,"Hvem er hvem"),
       claimed.length? el("div",{class:"list"},...claimed.map(p=>el("div",{class:"item",style:"cursor:default"},
         el("div",{class:"txt"},el("span",{class:"navn"},p.navn),el("span",{class:"muted"},"✋ "+(p.brugerNavn||"en bruger"))),
@@ -820,7 +839,11 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       el("div",{class:"list"},...brugere.map(b=>el("div",{class:"item",style:"cursor:default"},
         el("div",{class:"txt"},el("span",{class:"navn"},b.navn+(mig&&b.id===mig.id?" (dig)":"")), el("span",{class:"muted"}, b.haAdmin? "Administrator i Home Assistant" : (b.person? "✋ "+b.person : "Har ikke valgt navn"))),
         b.haAdmin||(mig&&b.id===mig.id)? el("span",{class:"pill koebt"},"Admin") :
-          el("button",{type:"button",class:"btn small"+(b.admin?" ok":""),onclick:()=>saetAdmin(b,!b.admin)},b.admin?"Admin ✓":"Gør til admin"))))
+          el("button",{type:"button",class:"btn small"+(b.admin?" ok":""),onclick:()=>saetAdmin(b,!b.admin)},b.admin?"Admin ✓":"Gør til admin")))),
+      el("h3",null,"Kan vælges ved deling af budget"),
+      el("div",{class:"muted"},"Slå brugere fra, som ikke skal kunne vælges, når nogen deler et budget – fx børn eller ekstra brugere i Home Assistant."),
+      brugere&&!brugereFejl? el("div",{class:"chips",style:"flex-wrap:wrap"},...brugere.map(b=>el("button",{type:"button","aria-pressed":String(!b.skjulIDeling),
+        onclick:()=>saetBruger(b,{skjulIDeling:!b.skjulIDeling}, b.navn+(b.skjulIDeling?" kan nu vælges ved deling":" vises ikke længere ved deling"))},(b.skjulIDeling?"🚫 ":"✓ ")+b.navn))) : null
     );
   }
   // ================= LOGIN (samme Home Assistant-login som de andre apps) =================
@@ -901,7 +924,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       if(!res.ok) throw new Error("sync "+res.status);
       const j=await res.json(); let changed=false;
       const set=new Set();
-      for(const r of (j.poster||[])){ if(!r||!r.id) continue; set.add(r.id); const cur=db.records[r.id]; if(!cur || (r.updated||0)>(cur.updated||0) || (!db.dirty.includes(r.id) && JSON.stringify(cur)!==JSON.stringify(r))){ db.records[r.id]=r; changed=true; } }
+      for(const r of (j.poster||[])){ if(!r||!r.id) continue; set.add(r.id); const cur=db.records[r.id]; if(!cur || (r.updated||0)>(cur.updated||0) || ((!db.dirty.includes(r.id) || (r.id in sent && r.updated===sent[r.id] && cur.updated===sent[r.id])) && JSON.stringify(cur)!==JSON.stringify(r))){ db.records[r.id]=r; changed=true; } }
       db.dirty=db.dirty.filter(id=>!(id in sent) || (db.records[id] && db.records[id].updated!==sent[id]));
       // Serveren sender alt, man må se. Det den ikke sender (fx køb til én selv), fjernes fra telefonen.
       if(j.fuld) for(const id of Object.keys(db.records)) if(!set.has(id) && !db.dirty.includes(id)){ delete db.records[id]; changed=true; }

@@ -28,9 +28,9 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{3,160}$")
 _USER_RE = re.compile(r"^[A-Za-z0-9]{8,64}$")
 WWW = Path(__file__).parent / "www"
 FAELLES = "faelles.json"
-BRUGERE = "brugere.json"  # {bruger-id: {"admin": bool}} – administratorer i appen
+BRUGERE = "brugere.json"  # {bruger-id: {"admin": bool, "skjulIDeling": bool}} – sat af administratorer i appen
 # Felter der bevares på en slettet post, så den stadig kan filtreres rigtigt.
-META = ("kind", "personId", "anlId", "gaveId", "bruger", "deltMed", "oprettetAf", "koebtAf")
+META = ("kind", "personId", "anlId", "gaveId", "bruger", "deltMed", "inviteret", "oprettetAf", "koebtAf")
 
 
 def _konverter(uid: str, poster: dict) -> list[dict]:
@@ -103,24 +103,26 @@ class Store:
         self._skriv(data)
 
     # ---- administratorer i appen (ud over Home Assistants egne administratorer) ----
-    def app_admins(self) -> set[str]:
+    def _brugere(self) -> dict:
         f = self.root / BRUGERE
         try:
             d = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
         except (OSError, ValueError):
             d = {}
-        return {k for k, v in d.items() if isinstance(v, dict) and v.get("admin")} if isinstance(d, dict) else set()
+        return {k: v for k, v in d.items() if isinstance(v, dict)} if isinstance(d, dict) else {}
 
-    def saet_admin(self, uid: str, admin: bool) -> None:
+    def app_admins(self) -> set[str]:
+        return {k for k, v in self._brugere().items() if v.get("admin")}
+
+    def skjult_i_deling(self) -> set[str]:
+        """Brugere som en administrator har valgt ikke skal vises, når man deler budget."""
+        return {k for k, v in self._brugere().items() if v.get("skjulIDeling")}
+
+    def saet_bruger(self, uid: str, felter: dict) -> None:
         with self._laas:
             f = self.root / BRUGERE
-            try:
-                d = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
-            except (OSError, ValueError):
-                d = {}
-            if not isinstance(d, dict):
-                d = {}
-            d[uid] = {"admin": bool(admin)}
+            d = self._brugere()
+            d.setdefault(uid, {}).update({k: bool(v) for k, v in felter.items() if k in ("admin", "skjulIDeling")})
             tmp = f.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, f)
@@ -158,7 +160,7 @@ class Store:
         k = r.get("kind")
         if k in ("budget", "pbud"):
             # et budget kan deles med andre brugere (fx forældre om et barns gaver)
-            return r.get("bruger") != uid and uid not in (r.get("deltMed") or [])
+            return r.get("bruger") != uid and uid not in (r.get("deltMed") or []) and uid not in (r.get("inviteret") or [])
         if r.get("personId") in mine:
             if k == "koeb":
                 return True
@@ -168,6 +170,7 @@ class Store:
 
     def sync(self, uid: str, navn: str, admin: bool, indkomne: list) -> list[dict]:
         """Flet brugerens ændringer ind og returnér de poster, brugeren må se."""
+        skjulte_i_deling = self.skjult_i_deling()
         with self._laas:
             data = self._laes()
             aendret = False
@@ -191,6 +194,17 @@ class Store:
                         if m in cur:
                             r[m] = cur[m]
                 k = (cur or r).get("kind")
+                if k in ("budget", "pbud") and cur is not None and uid != cur.get("bruger") and uid not in (cur.get("deltMed") or []):
+                    # kun inviteret: man kan kun godkende eller afvise
+                    if r.get("deleted") or uid not in (cur.get("inviteret") or []):
+                        continue
+                    ja = uid in (r.get("deltMed") or [])
+                    r = dict(cur, id=rid, updated=upd)
+                    r["inviteret"] = sorted(set(cur.get("inviteret") or []) - {uid})
+                    r["deltMed"] = sorted(set(cur.get("deltMed") or []) | ({uid} if ja else set()))
+                    data[rid] = r
+                    aendret = True
+                    continue
                 if r.get("deleted"):
                     if k in ("person", "anl") and not admin:
                         continue
@@ -220,9 +234,18 @@ class Store:
                     elif cur.get("koebtNavn"):
                         r["koebtNavn"] = cur["koebtNavn"]
                 elif k in ("budget", "pbud"):
-                    r["bruger"] = cur.get("bruger", uid) if cur else uid
-                    dm = r.get("deltMed")
-                    r["deltMed"] = sorted({d for d in dm if isinstance(d, str) and _USER_RE.match(d) and d != r["bruger"]}) if isinstance(dm, list) else []
+                    # Nye brugere i deltMed bliver først inviteret – de skal selv godkende.
+                    ejer = cur.get("bruger", uid) if cur else uid
+                    r["bruger"] = ejer
+                    r["ejerNavn"] = cur.get("ejerNavn", navn) if cur else navn
+                    gl_delt = set((cur or {}).get("deltMed") or [])
+                    gl_inv = set((cur or {}).get("inviteret") or [])
+                    oensket = {d for d in (r.get("deltMed") or []) if isinstance(d, str) and _USER_RE.match(d)} - {ejer}
+                    delt = gl_delt & oensket
+                    nye = oensket - delt - gl_inv
+                    nye -= skjulte_i_deling
+                    r["deltMed"] = sorted(delt)
+                    r["inviteret"] = sorted((gl_inv & oensket) | nye)
                 if self._skjult(r, mine, uid):
                     continue  # fx et køb til en selv
                 data[rid] = r
@@ -291,7 +314,7 @@ class MigView(HomeAssistantView):
 
 class BrugereView(HomeAssistantView):
     """GET: alle brugere (til at dele budget; administratorer får også admin-oplysninger).
-    POST {"id", "admin"} (kun administratorer): gør en bruger til (eller fjern som) administrator."""
+    POST {"id", "admin"?, "skjulIDeling"?} (kun administratorer): administrator / vis ikke ved deling af budget."""
 
     url = "/api/gaver/brugere"
     name = "api:gaver:brugere"
@@ -305,6 +328,7 @@ class BrugereView(HomeAssistantView):
         u = request["hass_user"]
         admin = await er_admin(self.hass, self.store, u)
         app = await self.hass.async_add_executor_job(self.store.app_admins)
+        skjul = await self.hass.async_add_executor_job(self.store.skjult_i_deling)
         claims = await self.hass.async_add_executor_job(self.store.claims)
         ud = []
         for b in await self.hass.auth.async_get_users():
@@ -312,8 +336,8 @@ class BrugereView(HomeAssistantView):
                 continue
             if admin:
                 ud.append({"id": b.id, "navn": b.name or "", "haAdmin": bool(b.is_admin), "admin": bool(b.is_admin) or b.id in app,
-                           "person": claims.get(b.id, "")})
-            else:
+                           "person": claims.get(b.id, ""), "skjulIDeling": b.id in skjul})
+            elif b.id not in skjul:
                 ud.append({"id": b.id, "navn": b.name or ""})
         ud.sort(key=lambda x: x["navn"].lower())
         return self.json({"brugere": ud})
@@ -329,9 +353,9 @@ class BrugereView(HomeAssistantView):
         bid = obj.get("id") if isinstance(obj, dict) else None
         if not isinstance(bid, str) or not _USER_RE.match(bid):
             return self.json_message("Ukendt bruger", 400)
-        if bid == u.id and not obj.get("admin"):
+        if bid == u.id and "admin" in obj and not obj.get("admin"):
             return self.json_message("Du kan ikke fjerne dig selv", 400)
-        await self.hass.async_add_executor_job(self.store.saet_admin, bid, bool(obj.get("admin")))
+        await self.hass.async_add_executor_job(self.store.saet_bruger, bid, obj)
         return self.json({"ok": True})
 
 
