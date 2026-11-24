@@ -160,7 +160,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.2.0";
+  const VERSION = "0.3.0";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -201,10 +201,13 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   function gendan(rec){ put(rec.id, Object.assign({},rec)); }
   const rec = id => { const r=db.records[id]; return r && !r.deleted ? r : null; };
 
-  const personer = () => levende("person").sort((a,b)=>a.navn.localeCompare(b.navn,"da"));
+  // Skjulte personer (fx når de selv kigger med) vises ingen steder og tæller ikke med i totaler.
+  const allePersoner = () => levende("person").sort((a,b)=>a.navn.localeCompare(b.navn,"da"));
+  const personer = () => allePersoner().filter(p=>!p.skjult);
+  const erSkjult = pid => { const p=rec(pid); return !!(p&&p.skjult); };
   const TYPEORD={jul:0,fdag:1,andet:2};
   const anledninger = () => levende("anl").sort((a,b)=>(a.aar-b.aar)||((TYPEORD[a.type]??9)-(TYPEORD[b.type]??9))||String(a.dato||"").localeCompare(String(b.dato||""))||a.navn.localeCompare(b.navn,"da"));
-  const gaver = (pid,aid) => levende("gave").filter(g=>(!pid||g.personId===pid)&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
+  const gaver = (pid,aid) => levende("gave").filter(g=>(pid? g.personId===pid : !erSkjult(g.personId))&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const sum = gs => gs.reduce((s,g)=>s+(Number(g.pris)||0),0);
   const egetBudget = (pid,aid) => { const b=rec("bud-"+pid+"-"+aid); return b? Number(b.beloeb)||0 : 0; };
   const fastBudget = pid => { const p=rec(pid); return p? Number(p.budget)||0 : 0; };
@@ -340,6 +343,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 
   function renderAll(){ sikrValgt(); renderOversigt(); renderIndkoeb(); renderPersoner(); if(aabentArk) aabentArk(); drawSync(); }
 
+  function saetSkjult(p,v){ put(p.id,Object.assign({},p,{skjult:!!v})); }
   // ================= ARK (dialoger) =================
   let aabentArk=null;   // gen-tegner det åbne ark ved ændringer
   function visArk(tegn){ aabentArk=null; $("ark").replaceChildren(...tegn()); $("arkBg").classList.remove("hidden"); document.body.style.overflow="hidden"; }
@@ -351,7 +355,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   // --- person-detaljer ---
   function personArk(pid){
     const tegn=()=>{
-      const p=rec(pid); if(!p){ lukArk(); return []; }
+      const p=rec(pid); if(!p||p.skjult){ lukArk(); return []; }
       const f=naesteFdag(p);
       const anl=anledninger();
       const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length || egetBudget(pid,a.id));
@@ -379,7 +383,8 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
           andre.length? el("label",{class:"f"},"Tilføj gave til en anden anledning",
             el("select",{onchange:e=>{ if(e.target.value) gaveArk(null,{personId:pid,anlId:e.target.value,fraPerson:true}); }},
               el("option",{value:""},"Vælg anledning …"), ...andre.map(a=>el("option",{value:a.id},a.navn)))) : null),
-        el("div",{class:"row"}, el("button",{type:"button",class:"btn",onclick:()=>personRetArk(p)},"Ret person"))
+        el("div",{class:"row"}, el("button",{type:"button",class:"btn",onclick:()=>personRetArk(p)},"Ret person"),
+          el("button",{type:"button",class:"btn",onclick:()=>{ saetSkjult(p,true); lukArk(); toast(p.navn+" er skjult – vis igen under ⚙️"); }},"🙈 Skjul"))
       ].filter(Boolean);
     };
     visArk(tegn); aabentArk=()=>$("ark").replaceChildren(...tegn());
@@ -527,10 +532,16 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       ["Tilføj en gave","med den røde + Gave-knap: vælg person og anledning, skriv hvad det er og prisen. Start som Idé."],
       ["Køb ind","under 🛍️ Indkøb står alle idéer der mangler at blive købt. Tryk Købt ✓, når den er i hus. Når gaven er givet, sætter du den til Givet."],
       ["Hold øje med budgettet","Oversigten viser hvad du har brugt i alt, og hver person bliver rød, hvis du er over budget. Et andet beløb til én anledning sætter du inde på personen."],
-      ["Sammenlign","tryk på en person for at se hvad de har fået til hver anledning – fx Jul 26 mod Jul 27."]
+      ["Sammenlign","tryk på en person for at se hvad de har fået til hver anledning – fx Jul 26 mod Jul 27."],
+      ["Kigger nogen med?","tryk på personen → 🙈 Skjul, eller skjul dem her under ⚙️. Så kan de ikke se deres egne gaver. Vis dem igen her."]
     ];
-    visArk(()=>[
+    const tegn=()=>{ const alle=allePersoner(); const skjulte=alle.filter(p=>p.skjult); return [
       top("Indstillinger","Gaver v"+VERSION),
+      alle.length? el("div",{class:"card",style:"margin-top:0"},
+        el("h2",null,"🙈 Skjul personer"),
+        el("div",{class:"muted"},"Kigger en person med? Skjul dem, så deres gaver, priser og budget forsvinder fra hele appen – også fra totalerne. Tryk igen for at vise dem."),
+        el("div",{class:"chips",style:"flex-wrap:wrap"},...alle.map(p=>el("button",{type:"button","aria-pressed":String(!!p.skjult),onclick:()=>saetSkjult(p,!p.skjult)},(p.skjult?"🙈 ":"")+p.navn))),
+        skjulte.length? el("button",{type:"button",class:"btn",onclick:()=>{ for(const p of skjulte) saetSkjult(p,false); toast("Alle vises igen"); }},"Vis alle igen") : null) : null,
       el("div",{class:"card",style:"margin-top:0"},
         el("h2",null,"Del"),
         el("button",{type:"button",class:"btn primary",onclick:()=>delTekst("Gaver","Gaver – hold styr på gaver og priser",link)},"Del link til appen"),
@@ -544,7 +555,8 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       el("div",{class:"card"},
         el("h2",null,"På iPhone"),
         el("div",{class:"muted"},"Åbn "+link+" i Safari → Del → Føj til hjemmeskærm. Appen virker også uden dækning og sender ændringerne, når der er forbindelse igen."))
-    ].filter(Boolean));
+    ].filter(Boolean); };
+    visArk(tegn); aabentArk=()=>$("ark").replaceChildren(...tegn());
   }
   $("tandhjul").addEventListener("click",indstArk);
 
