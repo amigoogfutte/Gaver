@@ -1,18 +1,19 @@
 # Gaver
 
-Hold styr på hvem der får hvad i gave – og hvor meget du bruger på hver person.
+Fælles gaveliste for familie og venner – hvem får hvad, hvem har købt det, og hvor meget du bruger.
 
-- **Personer**: tilføj familie og venner, gerne med fødselsdag (så får du en liste over de næste fødselsdage) og en note med ønsker og størrelser.
-- **Anledninger**: *Jul 2026*, *Jul 2027*, *Fødselsdage 2026* og *Fødselsdage 2027* er oprettet fra start. Opret selv flere, fx konfirmation, bryllup eller *Jul 2028*.
-- **Gaver**: hvad, pris, hvor den er fra, og status *Idé → Købt → Givet*.
-- **Budget**: giv hver person et fast budget (fx 300 kr), som gælder for alle anledninger – eller et andet beløb til én bestemt anledning. Se om du er over eller under.
-- **🙈 Skjul person**: kigger en person med, kan du skjule dem (på personen eller under ⚙️). Så forsvinder deres gaver, priser og budget fra hele appen – også fra totalerne – indtil du viser dem igen.
-- **⚙️ Indstillinger**: del link til appen, del oversigt eller indkøbsliste som tekst, og en kort vejledning.
-- **Oversigt**: hvad du har brugt i alt til den valgte anledning, og hvad hver person får.
-- **Indkøb**: idéer der mangler at blive købt, og personer der mangler en gave. Listen kan deles.
-- **Sammenligning**: på hver person kan du se, hvad de har fået til de forskellige anledninger (fx Jul 2026 mod Jul 2027).
+- **Fælles liste**: alle der får linket deler den samme liste (de logger ind med deres egen Home Assistant-bruger).
+- **✋ Det er mig**: hver bruger vælger sit eget navn på listen – én gang. Derefter kan de ikke se, hvad der er købt til dem, og heller ikke de andres idéer til dem. Serveren sender det slet ikke til deres telefon. Kun en administrator kan åbne for det igen.
+- **Ønsker**: man kan skrive sine egne ønsker på sig selv. De bliver stående hos en selv, også når nogen har købt dem.
+- **Antal**: ønskes der fx 3 stk, bliver gaven stående på indkøbslisten for de andre, indtil der er købt 3.
+- **Anledninger**: *Jul 2026*, *Jul 2027*, *Fødselsdage 2026* og *Fødselsdage 2027* fra start – opret selv flere.
+- **Budget**: dit eget budget pr. person (fast eller pr. anledning). Kun du kan se det.
+- **Oversigt**: hvad du har brugt og hvad alle har brugt til den valgte anledning.
+- **🛍️ Indkøb**: idéer og ønsker der mangler at blive købt, og personer uden gave. Kan deles som tekst.
+- **🙈 Skjul**: kigger nogen med over skulderen, kan du skjule dem på din telefon.
+- **🔑 Administrator**: Home Assistants administratorer er altid administrator. De kan gøre andre til administrator under ⚙️, åbne for "det er mig" igen og slette personer og anledninger.
 
-Appen virker uden dækning (gemmes på telefonen) og synkroniserer med Home Assistant. Hver Home Assistant-bruger har sin egen gaveliste, så andre i husstanden kan ikke se dine gaver.
+Data ligger i `/config/gaver/faelles.json`. Appen virker uden dækning og synkroniserer, når der er forbindelse.
 
 ## Installation
 

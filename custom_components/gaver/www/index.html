@@ -111,6 +111,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 
   <!-- ===== Oversigt ===== -->
   <section id="v-oversigt">
+    <div class="card hidden" id="hvemKort"></div>
     <div class="chips" id="anlChips" style="margin-top:10px"></div>
     <div class="card" id="anlKort"></div>
     <div class="card">
@@ -160,7 +161,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.3.0";
+  const VERSION = "0.4.0";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -173,7 +174,8 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   }
   function newId(p){ return p+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
   const kr = n => (Math.round((Number(n)||0)*100)/100).toLocaleString("da-DK",{minimumFractionDigits:0,maximumFractionDigits:2})+" kr";
-  const tal = v => { const n=parseFloat(String(v||"").replace(/\./g,"").replace(",",".")); return isFinite(n)&&n>=0 ? n : 0; };
+  const tal = v => { const n=parseFloat(String(v==null?"":v).replace(/\./g,"").replace(",",".")); return isFinite(n)&&n>=0 ? n : 0; };
+  const heltal = (v,min) => { const n=parseInt(v,10); return isFinite(n)&&n>=min ? n : min; };
   const ls = { get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
   const MDR=["januar","februar","marts","april","maj","juni","juli","august","september","oktober","november","december"];
 
@@ -184,40 +186,67 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     t.classList.remove("hidden"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.add("hidden"), fortryd?6000:2600);
   }
 
-  // ================= DATA =================
-  // person  {kind:"person", navn, fdag:"MM-DD"|"" , fAar, note}
-  // anl     {kind:"anl", navn, type:"jul"|"fdag"|"andet", aar, dato:"YYYY-MM-DD"|""}
-  // gave    {kind:"gave", personId, anlId, tekst, pris, status:"ide"|"koebt"|"givet", butik, note, oprettet}
-  // budget  {kind:"budget", personId, anlId, beloeb}   id = "bud-<person>-<anl>"
-  const DATAKEY="gv_data_v1";
+  // ================= HVEM ER JEG =================
+  const HA = location.pathname.startsWith("/gaver-app/");
+  let mig = HA ? ls.get("gv_mig",null) : {id:"lokal", navn:"Mig", admin:true};
+  const migId = () => mig ? mig.id : "";
+  const erAdmin = () => !!(mig && mig.admin);
+
+  // ================= DATA (fælles liste) =================
+  // person {kind:"person", navn, fdag:"MM-DD", fAar, note, brugerId, brugerNavn}   brugerId = den HA-bruger der har sagt "Det er mig"
+  // anl    {kind:"anl", navn, type:"jul"|"fdag"|"andet", aar, dato}
+  // gave   {kind:"gave", personId, anlId, tekst, antal (ønsket), pris (pr. stk), butik, note, oprettetAf, oprettet}
+  // koeb   {kind:"koeb", gaveId, personId, anlId, antal, pris (betalt i alt), status:"koebt"|"givet", koebtAf, koebtNavn, oprettet}
+  // pbud   {kind:"pbud", bruger, personId, beloeb}          id "pbud-<bruger>-<person>"   (fast budget, kun til mig)
+  // budget {kind:"budget", bruger, personId, anlId, beloeb}  id "bud-<bruger>-<person>-<anl>"
+  // Serveren sender aldrig køb eller andres idéer til den person, de er til.
+  const DATAKEY="gv_data_v2";
   let db = ls.get(DATAKEY,null); if(!db||!db.records) db={records:{},dirty:[]};
-  // Standard-anledninger. Samme id på alle enheder, updated=1 så alt fra serveren vinder.
   for(const [id,navn,type,aar,dato] of [["anl-jul-2026","Jul 2026","jul",2026,"2026-12-24"],["anl-jul-2027","Jul 2027","jul",2027,"2027-12-24"],["anl-fdag-2026","Fødselsdage 2026","fdag",2026,""],["anl-fdag-2027","Fødselsdage 2027","fdag",2027,""]])
-    if(!db.records[id]) db.records[id]={id,updated:1,kind:"anl",navn,type,aar,dato};
+    if(!db.records[id]){ db.records[id]={id,updated:1,kind:"anl",navn,type,aar,dato}; if(!db.dirty.includes(id)) db.dirty.push(id); }
   function persist(){ try{ localStorage.setItem(DATAKEY, JSON.stringify(db)); }catch(e){ toast("Telefonen kunne ikke gemme"); } }
   const levende = kind => Object.values(db.records).filter(r=>r && !r.deleted && r.kind===kind);
-  function put(id,data){ const prev=db.records[id]; const now=Math.max(Date.now(), prev?(prev.updated||0)+1:0); db.records[id]=Object.assign({},data,{id,updated:now}); if(!db.dirty.includes(id)) db.dirty.push(id); persist(); renderAll(); scheduleSync(1200); return db.records[id]; }
-  function del(id){ const prev=db.records[id]; const now=Math.max(Date.now(), prev?(prev.updated||0)+1:0); db.records[id]={id,updated:now,deleted:true,kind:prev?prev.kind:""}; if(!db.dirty.includes(id)) db.dirty.push(id); persist(); renderAll(); scheduleSync(1200); }
-  function gendan(rec){ put(rec.id, Object.assign({},rec)); }
+  function put(id,data){ const prev=db.records[id]; const now=Math.max(Date.now(), prev?(prev.updated||0)+1:0); db.records[id]=Object.assign({},data,{id,updated:now}); if(!db.dirty.includes(id)) db.dirty.push(id); persist(); renderAll(); scheduleSync(800); return db.records[id]; }
+  function del(id){ const prev=db.records[id]; const now=Math.max(Date.now(), prev?(prev.updated||0)+1:0); db.records[id]={id,updated:now,deleted:true,kind:prev?prev.kind:""}; if(!db.dirty.includes(id)) db.dirty.push(id); persist(); renderAll(); scheduleSync(800); }
+  function gendan(r){ put(r.id, Object.assign({},r)); }
   const rec = id => { const r=db.records[id]; return r && !r.deleted ? r : null; };
 
-  // Skjulte personer (fx når de selv kigger med) vises ingen steder og tæller ikke med i totaler.
+  // skjul på denne enhed (når nogen kigger med) – gemmes kun lokalt
+  let skjulte = new Set(ls.get("gv_skjult",[]));
+  function saetSkjult(pid,v){ v? skjulte.add(pid) : skjulte.delete(pid); ls.set("gv_skjult",[...skjulte]); renderAll(); }
+
   const allePersoner = () => levende("person").sort((a,b)=>a.navn.localeCompare(b.navn,"da"));
-  const personer = () => allePersoner().filter(p=>!p.skjult);
-  const erSkjult = pid => { const p=rec(pid); return !!(p&&p.skjult); };
+  const personer = () => allePersoner().filter(p=>!skjulte.has(p.id));
+  const erMig = pid => { const p=rec(pid); return !!(p && mig && p.brugerId===mig.id); };
+  const minePersoner = () => allePersoner().filter(p=>erMig(p.id));
+  const synlig = pid => !skjulte.has(pid);
   const TYPEORD={jul:0,fdag:1,andet:2};
   const anledninger = () => levende("anl").sort((a,b)=>(a.aar-b.aar)||((TYPEORD[a.type]??9)-(TYPEORD[b.type]??9))||String(a.dato||"").localeCompare(String(b.dato||""))||a.navn.localeCompare(b.navn,"da"));
-  const gaver = (pid,aid) => levende("gave").filter(g=>(pid? g.personId===pid : !erSkjult(g.personId))&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
-  const sum = gs => gs.reduce((s,g)=>s+(Number(g.pris)||0),0);
-  const egetBudget = (pid,aid) => { const b=rec("bud-"+pid+"-"+aid); return b? Number(b.beloeb)||0 : 0; };
-  const fastBudget = pid => { const p=rec(pid); return p? Number(p.budget)||0 : 0; };
+  const gaver = (pid,aid) => levende("gave").filter(g=>(pid? g.personId===pid : synlig(g.personId))&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
+  const koeb = (pid,aid) => levende("koeb").filter(k=>(pid? k.personId===pid : synlig(k.personId))&&(!aid||k.anlId===aid));
+  const koebTil = gid => levende("koeb").filter(k=>k.gaveId===gid).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
+  const mineKoeb = ks => ks.filter(k=>k.koebtAf===migId());
+  const sumPris = ks => ks.reduce((s,k)=>s+(Number(k.pris)||0),0);
+  const oensket = g => Math.max(1, Number(g.antal)||1);
+  const koebtAntal = g => koebTil(g.id).reduce((s,k)=>s+(Number(k.antal)||0),0);
+  const mangler = g => Math.max(0, oensket(g)-koebtAntal(g));
+  const aaben = g => erMig(g.personId) || mangler(g)>0;     // til mig selv er mit ønske altid "åbent"
+  const egetBudget = (pid,aid) => { const b=rec("bud-"+migId()+"-"+pid+"-"+aid); return b? Number(b.beloeb)||0 : 0; };
+  const fastBudget = pid => { const b=rec("pbud-"+migId()+"-"+pid); return b? Number(b.beloeb)||0 : 0; };
   const budget = (pid,aid) => egetBudget(pid,aid) || fastBudget(pid);
-  const STATUS={ide:"Idé",koebt:"Købt",givet:"Givet"};
-  const statusPill = s => el("span",{class:"pill "+(STATUS[s]?s:"ide")},STATUS[s]||"Idé");
   const personNavn = id => { const p=rec(id); return p?p.navn:"(slettet person)"; };
   const anlNavn = id => { const a=rec(id); return a?a.navn:"(slettet anledning)"; };
+  const koeberNavn = k => k.koebtAf===migId()? "dig" : (k.koebtNavn||"en anden");
+  const KSTATUS={koebt:"Købt",givet:"Givet"};
+  function gaveStatus(g){
+    if(erMig(g.personId)) return el("span",{class:"pill ide"},"Dit ønske");
+    const n=oensket(g), k=koebtAntal(g);
+    if(k<=0) return el("span",{class:"pill ide"},n>1? "Idé · "+n+" stk" : "Idé");
+    if(k<n) return el("span",{class:"pill ide"},k+" af "+n+" købt");
+    const ks=koebTil(g.id); const givet=ks.length && ks.every(x=>x.status==="givet");
+    return el("span",{class:"pill "+(givet?"givet":"koebt")}, givet? "Givet" : (n>1? "Alle "+n+" købt":"Købt"));
+  }
 
-  // valgt anledning: den første kommende jul ellers den første
   let valgtAnl = ls.get("gv_valgt",null);
   function sikrValgt(){
     const alle=anledninger(); if(valgtAnl && alle.some(a=>a.id===valgtAnl)) return;
@@ -226,98 +255,116 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   }
   function vaelgAnl(id){ valgtAnl=id; ls.set("gv_valgt",id); renderAll(); }
 
-  // fødselsdage
   function naesteFdag(p){
     if(!p.fdag || !/^\d\d-\d\d$/.test(p.fdag)) return null;
     const [m,d]=p.fdag.split("-").map(Number); const nu=new Date(); nu.setHours(0,0,0,0);
     let dt=new Date(nu.getFullYear(),m-1,d); if(dt<nu) dt=new Date(nu.getFullYear()+1,m-1,d);
-    const dage=Math.round((dt-nu)/864e5);
-    const fylder=p.fAar? dt.getFullYear()-Number(p.fAar) : null;
-    return {dt,dage,fylder};
+    return {dt, dage:Math.round((dt-nu)/864e5), fylder:p.fAar? dt.getFullYear()-Number(p.fAar) : null};
   }
   const fdagTekst = p => { if(!p.fdag) return ""; const [m,d]=p.fdag.split("-").map(Number); return d+". "+MDR[m-1]; };
   const omDage = n => n===0?"i dag":n===1?"i morgen":"om "+n+" dage";
+  function datoTekst(d){ if(!d) return ""; const [y,m,dd]=d.split("-").map(Number); return dd+". "+MDR[m-1]+" "+y; }
 
   // ================= VISNING =================
-  let visning="oversigt";
   document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>{
-    visning=b.dataset.v; document.querySelectorAll("nav.tabs button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
-    for(const v of ["oversigt","indkoeb","personer"]) $("v-"+v).classList.toggle("hidden",v!==visning);
+    const v=b.dataset.v; document.querySelectorAll("nav.tabs button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+    for(const n of ["oversigt","indkoeb","personer"]) $("v-"+n).classList.toggle("hidden",n!==v);
     window.scrollTo(0,0);
   }));
 
   function tegnChips(boks){
-    const alle=anledninger();
-    boks.replaceChildren(...alle.map(a=>el("button",{type:"button","aria-pressed":String(a.id===valgtAnl),onclick:()=>vaelgAnl(a.id)},a.navn)),
+    boks.replaceChildren(...anledninger().map(a=>el("button",{type:"button","aria-pressed":String(a.id===valgtAnl),onclick:()=>vaelgAnl(a.id)},a.navn)),
       el("button",{type:"button",class:"ny",onclick:()=>anlArk(null)},"+ Anledning"));
     const v=boks.querySelector('[aria-pressed="true"]'); if(v) requestAnimationFrame(()=>{ try{ v.scrollIntoView({block:"nearest",inline:"center"}); }catch(e){} });
   }
 
+  function hvemErDuKort(){
+    const k=$("hvemKort");
+    const vis = mig && !minePersoner().length && allePersoner().some(p=>!p.brugerId) && !ls.get("gv_ikkePaaListen",false);
+    k.classList.toggle("hidden",!vis); if(!vis) return;
+    k.replaceChildren(el("h2",null,"👋 Er du selv på listen?"),
+      el("div",{class:"muted"},"Vælg dit navn, så kan du ikke se, hvad de andre har købt til dig. Dine egne ønsker kan du stadig skrive på."),
+      el("button",{type:"button",class:"btn primary",onclick:hvemArk},"Vælg mit navn"),
+      el("button",{type:"button",class:"btn",onclick:()=>{ ls.set("gv_ikkePaaListen",true); renderAll(); }},"Jeg er ikke på listen"));
+  }
+
   function renderOversigt(){
-    tegnChips($("anlChips"));
+    tegnChips($("anlChips")); hvemErDuKort();
     const a=rec(valgtAnl); const k=$("anlKort");
     if(!a){ k.replaceChildren(el("div",{class:"empty"},"Opret en anledning for at komme i gang.")); $("ovListe").replaceChildren(); $("ovUden").classList.add("hidden"); $("ovAntal").textContent=""; return; }
-    const gs=gaver(null,a.id); const brugt=sum(gs);
-    const ps=personer(); const budgetTotal=ps.reduce((s,p)=>s+budget(p.id,a.id),0);
-    const koebt=sum(gs.filter(g=>g.status!=="ide")), ideer=sum(gs.filter(g=>g.status==="ide"));
+    const ps=personer().filter(p=>!erMig(p.id));
+    const ks=koeb(null,a.id), mine=mineKoeb(ks);
+    const brugt=sumPris(mine), alle=sumPris(ks);
+    const budgetTotal=ps.reduce((s,p)=>s+budget(p.id,a.id),0);
+    const aabne=gaver(null,a.id).filter(g=>!erMig(g.personId)&&aaben(g));
     const over=budgetTotal>0 && brugt>budgetTotal;
     k.replaceChildren(...[
       el("div",{class:"sekhead"}, el("div",null, el("h2",null,a.navn), a.dato? el("div",{class:"muted"},datoTekst(a.dato)) : null),
         el("button",{type:"button",class:"btn small",onclick:()=>anlArk(a)},"Ret")),
-      el("div",null, el("div",{class:"muted"},"I alt til gaver"), el("div",{class:"big"},kr(brugt)),
+      el("div",null, el("div",{class:"muted"},"Du har brugt"), el("div",{class:"big"},kr(brugt)),
         budgetTotal? el("div",{class:"muted"},"af budget "+kr(budgetTotal)+(over?" – "+kr(brugt-budgetTotal)+" over":" – "+kr(budgetTotal-brugt)+" tilbage")) : null),
       budgetTotal? el("div",{class:"bar"+(over?" over":"")}, el("i",{style:"width:"+Math.min(100,brugt/budgetTotal*100).toFixed(1)+"%"})) : null,
       el("div",{class:"stats"},
-        el("div",{class:"stat"},el("b",null,kr(koebt)),el("span",null,"købt / givet")),
-        el("div",{class:"stat"},el("b",null,kr(ideer)),el("span",null,"idéer (ikke købt)")),
-        el("div",{class:"stat"},el("b",null,String(gs.length)),el("span",null,gs.length===1?"gave":"gaver")))
+        el("div",{class:"stat"},el("b",null,kr(alle)),el("span",null,"alle har brugt")),
+        el("div",{class:"stat"},el("b",null,String(aabne.length)),el("span",null,aabne.length===1?"idé mangler":"idéer mangler")),
+        el("div",{class:"stat"},el("b",null,String(ks.reduce((s,x)=>s+(Number(x.antal)||0),0))),el("span",null,"gaver købt")))
     ].filter(Boolean));
     const med=[], uden=[];
-    for(const p of ps){ const pg=gs.filter(g=>g.personId===p.id); (pg.length||egetBudget(p.id,a.id)? med : uden).push([p,pg]); }
-    if(a.type==="fdag"){ const nd=p=>{ if(!p.fdag) return 9999; return p.fdag; }; med.sort((x,y)=>String(nd(x[0])).localeCompare(String(nd(y[0])))); }
-    $("ovAntal").textContent=med.length? med.length+" med gave":"";
-    $("ovListe").replaceChildren(...(med.length? med.map(([p,pg])=>personRad(p,pg,a)) : [el("div",{class:"empty"}, ps.length? "Ingen gaver til "+a.navn+" endnu. Tryk + Gave." : "Start med at tilføje personer under Personer.")]));
+    for(const p of personer()){
+      if(erMig(p.id)){ med.unshift(p); continue; }
+      (gaver(p.id,a.id).length||koeb(p.id,a.id).length||egetBudget(p.id,a.id)? med : uden).push(p);
+    }
+    if(a.type==="fdag") med.sort((x,y)=>(erMig(y.id)-erMig(x.id))||String(x.fdag||"99").localeCompare(String(y.fdag||"99")));
+    $("ovAntal").textContent=med.length? med.length+(med.length===1?" person":" personer"):"";
+    $("ovListe").replaceChildren(...(med.length? med.map(p=>personRad(p,a)) : [el("div",{class:"empty"}, ps.length? "Ingen gaver til "+a.navn+" endnu. Tryk + Gave." : "Start med at tilføje personer under Personer.")]));
     $("ovUden").classList.toggle("hidden",!uden.length);
     $("ovUden").querySelector("summary").textContent="Uden gave endnu ("+uden.length+") ▾";
-    $("ovUdenListe").replaceChildren(...uden.map(([p])=>el("button",{type:"button",class:"item",onclick:()=>gaveArk(null,{personId:p.id,anlId:a.id})},
+    $("ovUdenListe").replaceChildren(...uden.map(p=>el("button",{type:"button",class:"item",onclick:()=>gaveArk(null,{personId:p.id,anlId:a.id})},
       el("div",{class:"txt"},el("span",{class:"navn"},p.navn), a.type==="fdag"&&p.fdag? el("span",{class:"muted"},"Fødselsdag "+fdagTekst(p)) : null),
       el("span",{class:"muted"},"+ Gave"))));
   }
-  function personRad(p,pg,a){
-    const s=sum(pg), b=budget(p.id,a.id); const ide=pg.filter(g=>g.status==="ide").length;
-    const tekst=pg.map(g=>g.tekst).filter(Boolean).join(", ");
+  function personRad(p,a){
+    if(erMig(p.id)){
+      const ø=gaver(p.id,a.id);
+      return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
+        el("div",{class:"txt"}, el("span",{class:"navn"},p.navn+" (dig)"), el("span",{class:"muted"}, ø.length? "Dine ønsker: "+ø.map(g=>g.tekst).filter(Boolean).join(", ") : "Ingen ønsker endnu – tryk for at tilføje")),
+        el("div",{class:"tal"}, el("span",{class:"pill ide"},ø.length+(ø.length===1?" ønske":" ønsker"))));
+    }
+    const gs=gaver(p.id,a.id), ks=koeb(p.id,a.id), s=sumPris(mineKoeb(ks)), alle=sumPris(ks), b=budget(p.id,a.id);
+    const ide=gs.filter(aaben).length;
+    const tekst=gs.map(g=>g.tekst).filter(Boolean).join(", ");
     return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
       el("div",{class:"txt"}, el("span",{class:"navn"},p.navn),
-        tekst? el("span",{class:"muted"},tekst) : el("span",{class:"muted"},"Ingen gave valgt endnu"),
+        el("span",{class:"muted"},tekst||"Ingen gave valgt endnu"),
+        alle>s? el("span",{class:"muted"},"Alle i alt: "+kr(alle)) : null,
         a.type==="fdag"&&p.fdag? el("span",{class:"muted"},"🎂 "+fdagTekst(p)) : null),
       el("div",{class:"tal"}, el("span",null,kr(s)),
         b? el("span",{class:"pill "+(s>b?"over":"koebt")},s>b? kr(s-b)+" over" : "budget "+kr(b)) : null,
         ide? el("span",{class:"pill ide"},ide+(ide===1?" idé":" idéer")) : null));
   }
-  function datoTekst(d){ if(!d) return ""; const [y,m,dd]=d.split("-").map(Number); return dd+". "+MDR[m-1]+" "+y; }
 
   function renderIndkoeb(){
     tegnChips($("anlChips2"));
     const a=rec(valgtAnl);
-    const ideer=a? gaver(null,a.id).filter(g=>g.status==="ide").sort((x,y)=>personNavn(x.personId).localeCompare(personNavn(y.personId),"da")) : [];
+    const ideer=a? gaver(null,a.id).filter(g=>!erMig(g.personId)&&aaben(g)).sort((x,y)=>personNavn(x.personId).localeCompare(personNavn(y.personId),"da")) : [];
     $("ideListe").replaceChildren(...(ideer.length? ideer.map(g=>el("div",{class:"item",style:"cursor:default"},
       el("div",{class:"txt",style:"cursor:pointer",onclick:()=>gaveArk(g)}, el("span",{class:"navn"},g.tekst||"(uden navn)"),
-        el("span",{class:"muted"},personNavn(g.personId)+(g.pris?" · "+kr(g.pris):"")+(g.butik?" · "+g.butik:""))),
-      el("button",{type:"button",class:"btn small ok",onclick:()=>{ const f=Object.assign({},g); put(g.id,Object.assign({},g,{status:"koebt"})); toast("Markeret som købt",()=>gendan(f)); }},"Købt ✓")))
+        el("span",{class:"muted"},[personNavn(g.personId), oensket(g)>1? mangler(g)+" af "+oensket(g)+" mangler" : null, g.pris? kr(g.pris)+(oensket(g)>1?" pr. stk":"") : null, g.butik||null].filter(Boolean).join(" · "))),
+      el("button",{type:"button",class:"btn small ok",onclick:()=>koebArk(g,null)},"Købt ✓")))
       : [el("div",{class:"empty"},"Ingen idéer der mangler at blive købt.")]));
-    const uden=a? personer().filter(p=>!gaver(p.id,a.id).length) : [];
+    const uden=a? personer().filter(p=>!erMig(p.id)&&!gaver(p.id,a.id).length&&!koeb(p.id,a.id).length) : [];
     $("manglerListe").replaceChildren(...(uden.length? uden.map(p=>el("button",{type:"button",class:"item",onclick:()=>gaveArk(null,{personId:p.id,anlId:a.id})},
       el("span",{class:"navn"},p.navn), el("span",{class:"muted"},"+ Gave"))) : [el("div",{class:"empty"},"Alle har en gave 🎉")]));
-    const n=a? ideer.length:0; $("ideBadge").textContent=n; $("ideBadge").classList.toggle("hidden",!n);
+    const n=ideer.length; $("ideBadge").textContent=n; $("ideBadge").classList.toggle("hidden",!n);
   }
   function listeTekst(){
     const a=rec(valgtAnl); if(!a) return "";
-    const ideer=gaver(null,a.id).filter(g=>g.status==="ide");
-    const linjer=[a.navn+" – skal købes:"]; for(const g of ideer) linjer.push("• "+personNavn(g.personId)+": "+(g.tekst||"?")+(g.pris?" ("+kr(g.pris)+")":"")+(g.butik?" – "+g.butik:""));
-    const uden=personer().filter(p=>!gaver(p.id,a.id).length); if(uden.length) linjer.push("","Mangler gave: "+uden.map(p=>p.navn).join(", "));
+    const ideer=gaver(null,a.id).filter(g=>!erMig(g.personId)&&aaben(g));
+    const linjer=[a.navn+" – skal købes:"]; for(const g of ideer) linjer.push("• "+personNavn(g.personId)+": "+(g.tekst||"?")+(oensket(g)>1?" ("+mangler(g)+" stk)":"")+(g.pris?" – "+kr(g.pris):"")+(g.butik?" – "+g.butik:""));
+    const uden=personer().filter(p=>!erMig(p.id)&&!gaver(p.id,a.id).length&&!koeb(p.id,a.id).length); if(uden.length) linjer.push("","Mangler gave: "+uden.map(p=>p.navn).join(", "));
     return linjer.join("\n");
   }
-  $("delListe").addEventListener("click",async()=>{ const t=listeTekst(); if(navigator.share){ try{ await navigator.share({text:t}); return; }catch(e){ if(e&&e.name==="AbortError") return; } } try{ await navigator.clipboard.writeText(t); toast("Listen er kopieret"); }catch(e){ toast("Kunne ikke kopiere"); } });
+  $("delListe").addEventListener("click",()=>delTekst(anlNavn(valgtAnl),listeTekst()));
 
   function renderPersoner(){
     const ps=personer();
@@ -330,11 +377,14 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     const vis=ps.filter(p=>!q||p.navn.toLowerCase().includes(q));
     const anl=anledninger();
     $("personListe").replaceChildren(...(vis.length? vis.map(p=>{
-      const linjer=anl.map(a=>[a,sum(gaver(p.id,a.id))]).filter(x=>x[1]>0).map(([a,s])=>a.navn+": "+kr(s));
+      if(erMig(p.id)) return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
+        el("div",{class:"txt"},el("span",{class:"navn"},p.navn+" (dig)"),el("span",{class:"muted"},"Dine ønsker: "+gaver(p.id,null).length)), el("span",{class:"tal"},"✋"));
+      const linjer=anl.map(a=>[a,sumPris(mineKoeb(koeb(p.id,a.id)))]).filter(x=>x[1]>0).map(([a,s])=>a.navn+": "+kr(s));
+      const fb=fastBudget(p.id);
       return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
-        el("div",{class:"txt"},el("span",{class:"navn"},p.navn), el("span",{class:"muted"},linjer.length? linjer.join(" · ") : "Ingen gaver endnu"),
+        el("div",{class:"txt"},el("span",{class:"navn"},p.navn), el("span",{class:"muted"},linjer.length? linjer.join(" · ") : "Intet købt endnu"),
           p.fdag? el("span",{class:"muted"},"🎂 "+fdagTekst(p)) : null),
-        el("div",{class:"tal"},el("span",null,kr(sum(gaver(p.id,null)))), p.budget? el("span",{class:"muted",style:"font-weight:500;font-size:13px"},"budget "+kr(p.budget)) : null));
+        el("div",{class:"tal"},el("span",null,kr(sumPris(mineKoeb(koeb(p.id,null))))), fb? el("span",{class:"muted",style:"font-weight:500;font-size:13px"},"budget "+kr(fb)) : null));
     }) : [el("div",{class:"empty"}, ps.length? "Ingen match." : "Ingen personer endnu.")]));
   }
   $("soeg").addEventListener("input",renderPersoner);
@@ -343,51 +393,83 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 
   function renderAll(){ sikrValgt(); renderOversigt(); renderIndkoeb(); renderPersoner(); if(aabentArk) aabentArk(); drawSync(); }
 
-  function saetSkjult(p,v){ put(p.id,Object.assign({},p,{skjult:!!v})); }
   // ================= ARK (dialoger) =================
-  let aabentArk=null;   // gen-tegner det åbne ark ved ændringer
-  function visArk(tegn){ aabentArk=null; $("ark").replaceChildren(...tegn()); $("arkBg").classList.remove("hidden"); document.body.style.overflow="hidden"; }
+  let aabentArk=null;
+  function visArk(tegn,levende){ aabentArk=null; $("ark").replaceChildren(...tegn()); $("arkBg").classList.remove("hidden"); document.body.style.overflow="hidden"; if(levende) aabentArk=()=>$("ark").replaceChildren(...tegn()); }
   function lukArk(){ aabentArk=null; $("arkBg").classList.add("hidden"); $("ark").replaceChildren(); document.body.style.overflow=""; }
   $("arkBg").addEventListener("click",e=>{ if(e.target===$("arkBg")) lukArk(); });
   const top = (titel, under) => el("div",{class:"arkTop"}, el("div",null, el("h2",null,titel), under? el("div",{class:"muted"},under):null), el("button",{type:"button",class:"btn small",onclick:lukArk},"Luk"));
-  function felt(lbl, input){ return el("label",{class:"f"},lbl,input); }
+  const felt = (lbl, input) => el("label",{class:"f"},lbl,input);
+  const segFelt = (lbl, seg) => el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"},el("span",{class:"muted",style:"font-weight:500"},lbl),seg);
+  function lavSeg(valg, start, naar){
+    let v=start; const seg=el("div",{class:"seg"},...valg.map(([k,t])=>el("button",{type:"button","aria-pressed":String(k===v),onclick:e=>{ v=k; seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget))); if(naar) naar(k); }},t)));
+    seg.vaerdi=()=>v; return seg;
+  }
 
-  // --- person-detaljer ---
+  // --- en person ---
   function personArk(pid){
     const tegn=()=>{
-      const p=rec(pid); if(!p||p.skjult){ lukArk(); return []; }
-      const f=naesteFdag(p);
-      const anl=anledninger();
-      const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length || egetBudget(pid,a.id));
+      const p=rec(pid); if(!p||skjulte.has(pid)){ lukArk(); return []; }
+      const anl=anledninger(); const f=naesteFdag(p);
+      const fdagLinje = p.fdag? "Fødselsdag "+fdagTekst(p)+(f? " · "+omDage(f.dage)+(f.fylder?" · fylder "+f.fylder:"") : "") : null;
+      if(erMig(pid)){
+        const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length);
+        return [
+          top(p.navn+" (dig)", fdagLinje),
+          el("div",{class:"muted"},"Her skriver du dine ønsker. Du kan ikke se, hvad de andre har købt til dig – og de andres idéer til dig er også skjult."),
+          el("div",{class:"card",style:"margin-top:0"}, ...vist.map(a=>el("div",{class:"sektion"},
+            el("h3",null,a.navn),
+            ...gaver(pid,a.id).map(g=>el("button",{type:"button",class:"gaverad",onclick:()=>gaveArk(g,{fraPerson:true})},
+              el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"), [oensket(g)>1? oensket(g)+" stk":null, g.butik, g.note].filter(Boolean).length? el("span",{class:"muted"},[oensket(g)>1? oensket(g)+" stk":null, g.butik, g.note].filter(Boolean).join(" · ")) : null),
+              el("div",{class:"tal"}, g.pris? kr(g.pris) : ""))),
+            el("button",{type:"button",class:"btn small",onclick:()=>gaveArk(null,{personId:pid,anlId:a.id,fraPerson:true})},"+ Ønske"))),
+            anl.filter(a=>!vist.includes(a)).length? el("label",{class:"f"},"Ønske til en anden anledning",
+              el("select",{onchange:e=>{ if(e.target.value) gaveArk(null,{personId:pid,anlId:e.target.value,fraPerson:true}); }},
+                el("option",{value:""},"Vælg anledning …"), ...anl.filter(a=>!vist.includes(a)).map(a=>el("option",{value:a.id},a.navn)))) : null),
+          el("button",{type:"button",class:"btn",onclick:()=>personRetArk(p)},"Ret"),
+          el("div",{class:"muted"},"✋ Du har sagt \"det er mig\". Er det forkert, kan en administrator åbne for det igen.")
+        ];
+      }
+      const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length || koeb(pid,a.id).length || egetBudget(pid,a.id));
+      const historik=anl.map(a=>[a,sumPris(mineKoeb(koeb(pid,a.id)))]).filter(x=>x[1]>0);
       const sektioner=vist.map(a=>{
-        const gs=gaver(pid,a.id), s=sum(gs), b=budget(pid,a.id);
+        const gs=gaver(pid,a.id), s=sumPris(mineKoeb(koeb(pid,a.id))), alle=sumPris(koeb(pid,a.id)), b=budget(pid,a.id);
         return el("div",{class:"sektion"},
           el("div",{class:"sekhead"}, el("h3",null,a.navn), el("span",null, el("b",null,kr(s)), b? el("span",{class:"muted"}," / "+kr(b)) : null)),
+          alle>s? el("div",{class:"muted"},"Alle i alt: "+kr(alle)) : null,
           b? el("div",{class:"bar"+(s>b?" over":"")}, el("i",{style:"width:"+Math.min(100,s/b*100).toFixed(1)+"%"})) : null,
-          ...gs.map(g=>el("button",{type:"button",class:"gaverad",onclick:()=>gaveArk(g,{fraPerson:true})},
-            el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"), (g.butik||g.note)? el("span",{class:"muted"},[g.butik,g.note].filter(Boolean).join(" · ")) : null),
-            el("div",{class:"tal",style:"display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-weight:700"}, kr(g.pris), statusPill(g.status)))),
+          ...gs.map(g=>{ const ks=koebTil(g.id); const hvem=[...new Set(ks.map(koeberNavn))];
+            return el("button",{type:"button",class:"gaverad",onclick:()=>gaveArk(g,{fraPerson:true})},
+              el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"),
+                hvem.length? el("span",{class:"muted"},"Købt af "+hvem.join(", ")) : (g.butik||g.note)? el("span",{class:"muted"},[g.butik,g.note].filter(Boolean).join(" · ")) : null,
+                g.oprettetAf && g.oprettetAf===p.brugerId? el("span",{class:"muted"},"🎯 Ønsket af "+p.navn) : null),
+              el("div",{class:"tal"}, ks.length? kr(sumPris(ks)) : (g.pris? kr(g.pris) : ""), gaveStatus(g))); }),
           el("div",{class:"row"},
             el("button",{type:"button",class:"btn small",onclick:()=>gaveArk(null,{personId:pid,anlId:a.id,fraPerson:true})},"+ Gave"),
-            el("button",{type:"button",class:"btn small",onclick:()=>budgetArk(pid,a.id)}, b? "Budget "+kr(b)+(egetBudget(pid,a.id)?"":" (fast)") : "Sæt budget"))
-        );
+            el("button",{type:"button",class:"btn small",onclick:()=>budgetArk(pid,a.id)}, b? "Budget "+kr(b)+(egetBudget(pid,a.id)?"":" (fast)") : "Sæt budget")));
       });
       const andre=anl.filter(a=>!vist.includes(a));
-      const historik=anl.map(a=>[a,sum(gaver(pid,a.id))]).filter(x=>x[1]>0);
+      const fb=fastBudget(pid);
       return [
-        top(p.navn, [p.budget? "Budget "+kr(p.budget)+" pr. anledning" : null, p.fdag? "Fødselsdag "+fdagTekst(p)+(f? " · "+omDage(f.dage)+(f.fylder?" · fylder "+f.fylder:"") : "") : null, p.note||null].filter(Boolean).join(" — ")),
-        historik.length>1? el("div",{class:"card",style:"margin-top:0"}, el("h3",null,"Sammenligning"),
+        top(p.navn, [fdagLinje, fb? "Dit budget "+kr(fb)+" pr. anledning" : null, p.brugerId? "✋ "+(p.brugerNavn||"En bruger")+" har sagt \"det er mig\"" : null, p.note||null].filter(Boolean).join(" — ")),
+        historik.length>1? el("div",{class:"card",style:"margin-top:0"}, el("h3",null,"Du har givet"),
           el("div",{class:"sammen"}, ...historik.flatMap(([a,s])=>[el("span",null,a.navn), el("span",{class:"v"},kr(s))]),
-            el("span",null,el("b",null,"I alt")), el("span",{class:"v"},kr(sum(gaver(pid,null)))))) : null,
+            el("span",null,el("b",null,"I alt")), el("span",{class:"v"},kr(historik.reduce((x,h)=>x+h[1],0))))) : null,
         el("div",{class:"card",style:"margin-top:0"}, ...sektioner,
           andre.length? el("label",{class:"f"},"Tilføj gave til en anden anledning",
             el("select",{onchange:e=>{ if(e.target.value) gaveArk(null,{personId:pid,anlId:e.target.value,fraPerson:true}); }},
               el("option",{value:""},"Vælg anledning …"), ...andre.map(a=>el("option",{value:a.id},a.navn)))) : null),
         el("div",{class:"row"}, el("button",{type:"button",class:"btn",onclick:()=>personRetArk(p)},"Ret person"),
-          el("button",{type:"button",class:"btn",onclick:()=>{ saetSkjult(p,true); lukArk(); toast(p.navn+" er skjult – vis igen under ⚙️"); }},"🙈 Skjul"))
+          el("button",{type:"button",class:"btn",onclick:()=>{ saetSkjult(p.id,true); lukArk(); toast(p.navn+" er skjult – vis igen under ⚙️"); }},"🙈 Skjul")),
+        !p.brugerId && mig && !minePersoner().length? el("button",{type:"button",class:"btn",onclick:()=>sigDetErMig(p)},"✋ Det er mig") : null
       ].filter(Boolean);
     };
-    visArk(tegn); aabentArk=()=>$("ark").replaceChildren(...tegn());
+    visArk(tegn,true);
+  }
+  function sigDetErMig(p){
+    if(minePersoner().length){ toast("Du har allerede valgt dit navn"); return; }
+    if(!confirm("Er du "+p.navn+"? Så kan du ikke længere se, hvad der er købt til "+p.navn+". Du kan kun vælge én gang – kun en administrator kan ændre det bagefter.")) return;
+    put(p.id,Object.assign({},p,{brugerId:migId()})); lukArk(); toast("Nu er du "+p.navn+" 🎁"); scheduleSync(100);
   }
 
   // --- opret/ret person ---
@@ -398,79 +480,142 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     const aar=el("input",{type:"number",inputmode:"numeric",placeholder:"År (valgfrit)",value:p&&p.fAar?p.fAar:""});
     if(p&&p.fdag){ const [m,d]=p.fdag.split("-"); mdr.value=m; dag.value=d; }
     const note=el("textarea",{placeholder:"Fx størrelser, ønsker, hvad de har i forvejen …"},p&&p.note||"");
-    const bud=el("input",{type:"text",inputmode:"decimal",placeholder:"Fx 300 (valgfrit)",value:p&&p.budget?String(p.budget).replace(".",","):""});
+    const mig2=p&&erMig(p.id);
+    const fb=p? fastBudget(p.id) : 0;
+    const bud=el("input",{type:"text",inputmode:"decimal",placeholder:"Fx 300 (valgfrit)",value:fb?String(fb).replace(".",","):""});
     const gem=()=>{
       const n=navn.value.trim(); if(!n){ toast("Skriv et navn"); navn.focus(); return; }
-      const fdag=(dag.value&&mdr.value)? mdr.value+"-"+dag.value : "";
       const fa=parseInt(aar.value,10);
       const id=p?p.id:newId("p");
-      put(id,Object.assign({},p||{},{kind:"person",navn:n,fdag,fAar:(fa>1900&&fa<2100)?fa:"",budget:tal(bud.value),note:note.value.trim()}));
+      put(id,Object.assign({},p||{},{kind:"person",navn:n,fdag:(dag.value&&mdr.value)? mdr.value+"-"+dag.value : "",fAar:(fa>1900&&fa<2100)?fa:"",note:note.value.trim()}));
+      if(!mig2 && migId()){ const bid="pbud-"+migId()+"-"+id, v=tal(bud.value); if(v>0) put(bid,{kind:"pbud",bruger:migId(),personId:id,beloeb:v}); else if(rec(bid)) del(bid); }
       toast(p?"Gemt":n+" er tilføjet"); personArk(id);
     };
     visArk(()=>[
       top(p?"Ret person":"Ny person"),
       felt("Navn",navn),
-      el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"}, el("span",{class:"muted",style:"font-weight:500"},"Fødselsdag (valgfrit)"), el("div",{class:"row"},dag,mdr,aar)),
-      felt("Budget pr. anledning (kr)",bud),
-      el("div",{class:"muted"},"Gælder for alle anledninger – jul, fødselsdag osv. Du kan give en enkelt anledning et andet beløb inde på personen."),
+      segFelt("Fødselsdag (valgfrit)", el("div",{class:"row"},dag,mdr,aar)),
+      mig2? null : felt("Dit budget pr. anledning (kr)",bud),
+      mig2? null : el("div",{class:"muted"},"Kun du kan se dit budget. Det gælder for alle anledninger – en enkelt anledning kan få et andet beløb inde på personen."),
       felt("Note",note),
       el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
-      p? el("button",{type:"button",class:"btn danger",onclick:()=>{
-        const gs=gaver(p.id,null); if(!confirm("Slet "+p.navn+(gs.length?" og "+gs.length+" gave(r)":"")+"?")) return;
-        const kopi=[Object.assign({},p),...gs.map(g=>Object.assign({},g))];
-        for(const g of gs) del(g.id); del(p.id); lukArk();
+      p&&p.brugerId&&!mig2&&erAdmin()? el("button",{type:"button",class:"btn",onclick:()=>{ if(!confirm("Fjern \"det er mig\" fra "+p.navn+"? Så kan "+(p.brugerNavn||"brugeren")+" se alt, hvad der er købt til "+p.navn+".")) return; put(p.id,Object.assign({},p,{brugerId:""})); toast("Fjernet"); personArk(p.id); }},"Fjern \"det er mig\" ("+(p.brugerNavn||"bruger")+")") : null,
+      p&&erAdmin()? el("button",{type:"button",class:"btn danger",onclick:()=>{
+        const rs=[...levende("gave"),...levende("koeb"),...levende("budget"),...levende("pbud")].filter(r=>r.personId===p.id);
+        if(!confirm("Slet "+p.navn+(rs.length?" og alle gaver til "+p.navn:"")+"?")) return;
+        const kopi=[p,...rs].map(r=>Object.assign({},r));
+        for(const r of rs) del(r.id); del(p.id); lukArk();
         toast(p.navn+" er slettet",()=>kopi.forEach(gendan));
       }},"Slet person") : null
     ].filter(Boolean));
     if(!p) setTimeout(()=>navn.focus(),50);
   }
 
-  // --- opret/ret gave ---
+  // --- vælg hvem jeg er ---
+  function hvemArk(){
+    const fri=allePersoner().filter(p=>!p.brugerId);
+    const mine=minePersoner();
+    if(mine.length){ visArk(()=>[ top("Hvem er du?"), el("div",null,"Du er ",el("b",null,mine.map(p=>p.navn).join(", ")),"."), el("div",{class:"muted"},"Er det forkert, kan en administrator åbne for det igen under ⚙️.") ]); return; }
+    visArk(()=>[
+      top("Hvem er du?", mig? "Logget ind som "+mig.navn : null),
+      el("div",{class:"muted"},"Når du har valgt dit navn, kan du ikke se, hvad der er købt til dig. Dine egne ønsker kan du stadig skrive på – de forsvinder ikke for dig, når nogen køber dem."),
+      el("div",{class:"card",style:"margin-top:0"}, el("div",{class:"list"},
+        ...(fri.length? fri.map(p=>el("button",{type:"button",class:"item",onclick:()=>sigDetErMig(p)}, el("span",{class:"navn"},p.navn), el("span",{class:"muted"},"Det er mig ✋")))
+          : [el("div",{class:"empty"},"Alle navne er taget. Bed den der har delt listen om at tilføje dig.")]))),
+      el("button",{type:"button",class:"btn",onclick:()=>{ ls.set("gv_ikkePaaListen",true); lukArk(); renderAll(); }},"Jeg er ikke på listen")
+    ]);
+  }
+
+  // --- opret/ret gave (idé / ønske) ---
   function gaveArk(g, std){
     std=std||{};
     const ps=personer(), anl=anledninger();
     if(!ps.length){ toast("Tilføj en person først"); personRetArk(null); return; }
     if(!anl.length){ toast("Opret en anledning først"); anlArk(null); return; }
-    const pSel=el("select",null,el("option",{value:""},"Vælg person …"),...ps.map(p=>el("option",{value:p.id},p.navn)));
+    const pSel=el("select",null,el("option",{value:""},"Vælg person …"),...ps.map(p=>el("option",{value:p.id},p.navn+(erMig(p.id)?" (dig)":""))));
     pSel.value=g?g.personId:(std.personId||"");
     const aSel=el("select",null,...anl.map(a=>el("option",{value:a.id},a.navn)));
     aSel.value=g?g.anlId:(std.anlId&&rec(std.anlId)?std.anlId:anl[0].id);
     const tekst=el("input",{type:"text",value:g?g.tekst:"",placeholder:"Fx LEGO, gavekort, tørklæde …"});
+    const antal=el("input",{type:"number",inputmode:"numeric",min:"1",value:g?oensket(g):1});
     const pris=el("input",{type:"text",inputmode:"decimal",value:g&&g.pris?String(g.pris).replace(".",","):"",placeholder:"0"});
-    let status=g?g.status:"ide";
-    const seg=el("div",{class:"seg"},...Object.keys(STATUS).map(k=>el("button",{type:"button","aria-pressed":String(k===status),onclick:e=>{ status=k; seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget))); }},STATUS[k])));
     const butik=el("input",{type:"text",value:g?g.butik||"":"",placeholder:"Fx Føtex, Zalando, link …"});
-    const note=el("textarea",{placeholder:"Størrelse, farve, byttekvittering …"},g?g.note||"":"");
+    const note=el("textarea",{placeholder:"Størrelse, farve …"},g?g.note||"":"");
+    const tilMig=()=>erMig(pSel.value);
+    const koebtNu=lavSeg([["ide","Bare en idé"],["koebt","Jeg har købt den"]],"ide");
+    const koebBoks=el("div",{class:g?"hidden":""},segFelt("Status",koebtNu));
+    const opdater=()=>{ koebBoks.classList.toggle("hidden", !!g || tilMig()); };
+    pSel.addEventListener("change",opdater);
+    const tilbage=pid=>{ if(std.fraPerson&&rec(pid)) personArk(pid); else lukArk(); };
     const gem=(igen)=>{
       if(!pSel.value){ toast("Vælg en person"); return; }
-      if(!tekst.value.trim() && !tal(pris.value)){ toast("Skriv hvad gaven er eller hvad den koster"); tekst.focus(); return; }
-      const id=g?g.id:newId("g");
-      put(id,Object.assign({},g||{},{kind:"gave",personId:pSel.value,anlId:aSel.value,tekst:tekst.value.trim(),pris:tal(pris.value),status,butik:butik.value.trim(),note:note.value.trim(),oprettet:g?g.oprettet:Date.now()}));
-      toast(g?"Gemt":"Gaven er tilføjet");
-      if(igen) gaveArk(null,{personId:pSel.value,anlId:aSel.value,fraPerson:std.fraPerson}); else if(std.fraPerson) personArk(pSel.value); else lukArk();
+      if(!tekst.value.trim()){ toast("Skriv hvad gaven er"); tekst.focus(); return; }
+      const id=g?g.id:newId("g"); const n=heltal(antal.value,1), pr=tal(pris.value);
+      put(id,Object.assign({},g||{},{kind:"gave",personId:pSel.value,anlId:aSel.value,tekst:tekst.value.trim(),antal:n,pris:pr,butik:butik.value.trim(),note:note.value.trim(),oprettet:g?g.oprettet:Date.now()}));
+      for(const k of (g? koebTil(g.id):[])) if(k.personId!==pSel.value||k.anlId!==aSel.value) put(k.id,Object.assign({},k,{personId:pSel.value,anlId:aSel.value}));
+      if(!g && !tilMig() && koebtNu.vaerdi()==="koebt"){ put(newId("k"),{kind:"koeb",gaveId:id,personId:pSel.value,anlId:aSel.value,antal:n,pris:pr*n,status:"koebt",koebtAf:migId(),koebtNavn:mig?mig.navn:"",oprettet:Date.now()}); }
+      toast(g?"Gemt":(tilMig()?"Ønsket er tilføjet":"Gaven er tilføjet"));
+      if(igen) gaveArk(null,{personId:pSel.value,anlId:aSel.value,fraPerson:std.fraPerson}); else tilbage(pSel.value);
     };
-    visArk(()=>[
-      top(g?"Ret gave":"Ny gave"),
-      el("div",{class:"row"},felt("Til",pSel),felt("Anledning",aSel)),
-      felt("Gave",tekst),
-      felt("Pris (kr)",pris),
-      el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"},el("span",{class:"muted",style:"font-weight:500"},"Status"),seg),
-      felt("Hvor (butik / link)",butik),
-      felt("Note",note),
-      el("button",{type:"button",class:"btn primary",onclick:()=>gem(false)},"Gem"),
-      g? null : el("button",{type:"button",class:"btn",onclick:()=>gem(true)},"Gem og tilføj en til"),
-      g? el("button",{type:"button",class:"btn danger",onclick:()=>{ const kopi=Object.assign({},g); del(g.id); if(std.fraPerson) personArk(g.personId); else lukArk(); toast("Gaven er slettet",()=>gendan(kopi)); }},"Slet gave") : null
-    ].filter(Boolean));
+    const tegn=()=>{
+      const ks=g? koebTil(g.id) : [];
+      const mit=g&&erMig(g.personId);
+      const andresKoeb=ks.some(k=>k.koebtAf!==migId());
+      return [
+        top(g? (mit?"Dit ønske":"Gave") : "Ny gave", g&&!mit? personNavn(g.personId)+" · "+anlNavn(g.anlId) : null),
+        el("div",{class:"row"},felt("Til",pSel),felt("Anledning",aSel)),
+        felt("Gave",tekst),
+        el("div",{class:"row"},felt("Antal ønsket",antal),felt("Pris pr. stk (kr)",pris)),
+        koebBoks,
+        felt("Hvor (butik / link)",butik),
+        felt("Note",note),
+        g&&!mit? el("div",{class:"card",style:"margin-top:0"},
+          el("div",{class:"sekhead"},el("h3",null,"Købt"),gaveStatus(g)),
+          ...(ks.length? ks.map(k=>el("button",{type:"button",class:"gaverad",onclick:()=>{ if(k.koebtAf===migId()||erAdmin()) koebArk(g,k); else toast("Det er "+koeberNavn(k)+" der har købt den"); }},
+            el("div",{class:"t"},el("b",null,(Number(k.antal)||1)+" stk · købt af "+koeberNavn(k)), el("span",{class:"muted"},KSTATUS[k.status]||"Købt")),
+            el("div",{class:"tal"},kr(k.pris)))) : [el("div",{class:"empty"},"Ingen har købt den endnu.")]),
+          mangler(g)>0? el("button",{type:"button",class:"btn ok",onclick:()=>koebArk(g,null)},"🛒 Jeg har købt "+(oensket(g)>1? "nogle af dem":"den")) : null) : null,
+        el("button",{type:"button",class:"btn primary",onclick:()=>gem(false)},"Gem"),
+        g? null : el("button",{type:"button",class:"btn",onclick:()=>gem(true)},"Gem og tilføj en til"),
+        g&&(!andresKoeb||erAdmin())? el("button",{type:"button",class:"btn danger",onclick:()=>{
+          const kopi=[g,...ks].map(r=>Object.assign({},r)); for(const k of ks) del(k.id); del(g.id); tilbage(g.personId);
+          toast(mit?"Ønsket er slettet":"Gaven er slettet",()=>kopi.forEach(gendan)); }},mit?"Slet ønske":"Slet gave") : null
+      ].filter(Boolean);
+    };
+    visArk(tegn); opdater();
     if(!g) setTimeout(()=>(pSel.value?tekst:pSel).focus(),50);
   }
 
-  // --- budget ---
+  // --- et køb ---
+  function koebArk(g,k){
+    const antal=el("input",{type:"number",inputmode:"numeric",min:"1",value:k? (Number(k.antal)||1) : 1});
+    const pris=el("input",{type:"text",inputmode:"decimal",placeholder:"0",value:k? String(k.pris||"").replace(".",",") : (g.pris? String(g.pris).replace(".",",") : "")});
+    antal.addEventListener("input",()=>{ if(!k && g.pris) pris.value=String(g.pris*heltal(antal.value,1)).replace(".",","); });
+    const status=lavSeg([["koebt","Købt"],["givet","Givet"]], k? (k.status||"koebt") : "koebt");
+    const gem=()=>{
+      const id=k?k.id:newId("k");
+      put(id,Object.assign({},k||{},{kind:"koeb",gaveId:g.id,personId:g.personId,anlId:g.anlId,antal:heltal(antal.value,1),pris:tal(pris.value),status:status.vaerdi(),koebtAf:k?k.koebtAf:migId(),koebtNavn:k?k.koebtNavn:(mig?mig.navn:""),oprettet:k?k.oprettet:Date.now()}));
+      toast(k?"Gemt":"Markeret som købt"); gaveArk(rec(g.id)||g);
+    };
+    visArk(()=>[
+      top(k?"Ret køb":"Jeg har købt", (g.tekst||"")+" · "+personNavn(g.personId)),
+      oensket(g)>1&&!k? el("div",{class:"muted"},"Ønsket: "+oensket(g)+" stk · mangler: "+mangler(g)) : null,
+      el("div",{class:"row"},felt("Antal",antal),felt("Betalt i alt (kr)",pris)),
+      segFelt("Status",status),
+      el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
+      k? el("button",{type:"button",class:"btn danger",onclick:()=>{ const kopi=Object.assign({},k); del(k.id); gaveArk(rec(g.id)||g); toast("Købet er fjernet",()=>gendan(kopi)); }},"Fjern køb") : null,
+      el("button",{type:"button",class:"btn",onclick:()=>gaveArk(rec(g.id)||g)},"Tilbage")
+    ].filter(Boolean));
+  }
+
+  // --- budget for én anledning ---
   function budgetArk(pid,aid){
+    if(!migId()){ toast("Vent til appen har forbindelse til serveren"); return; }
     const b=egetBudget(pid,aid), fb=fastBudget(pid);
     const inp=el("input",{type:"text",inputmode:"decimal",value:b?String(b).replace(".",","):"",placeholder:"Fx 300"});
-    const gem=()=>{ const v=tal(inp.value); const id="bud-"+pid+"-"+aid; if(v>0) put(id,{kind:"budget",personId:pid,anlId:aid,beloeb:v}); else if(rec(id)) del(id); personArk(pid); };
+    const gem=()=>{ const v=tal(inp.value); const id="bud-"+migId()+"-"+pid+"-"+aid; if(v>0) put(id,{kind:"budget",bruger:migId(),personId:pid,anlId:aid,beloeb:v}); else if(rec(id)) del(id); personArk(pid); };
     visArk(()=>[ top("Budget", personNavn(pid)+" · "+anlNavn(aid)), felt("Hvor meget vil du højst bruge? (kr)",inp),
-      el("div",{class:"muted"}, fb? "Lad feltet stå tomt for at bruge det faste budget på "+kr(fb)+"." : "Lad feltet stå tomt for intet budget. Et fast budget for alle anledninger sætter du under Ret person."),
+      el("div",{class:"muted"}, (fb? "Lad feltet stå tomt for at bruge dit faste budget på "+kr(fb)+"." : "Lad feltet stå tomt for intet budget. Et fast budget for alle anledninger sætter du under Ret person.")+" Kun du kan se dit budget."),
       el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
       el("button",{type:"button",class:"btn",onclick:()=>personArk(pid)},"Tilbage") ]);
     setTimeout(()=>inp.focus(),50);
@@ -479,89 +624,118 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   // --- anledning ---
   function anlArk(a){
     const navn=el("input",{type:"text",value:a?a.navn:"",placeholder:"Fx Jul 2028, Maries konfirmation, Bryllup"});
-    let type=a?a.type:"andet";
     const aarNu=new Date().getFullYear();
     const aar=el("input",{type:"number",inputmode:"numeric",value:a?a.aar:aarNu});
     const dato=el("input",{type:"date",value:a?a.dato||"":""});
-    const seg=el("div",{class:"seg"},...[["jul","Jul"],["fdag","Fødselsdage"],["andet","Andet"]].map(([k,t])=>el("button",{type:"button","aria-pressed":String(k===type),onclick:e=>{
-      type=k; seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget)));
-      if(!a && !navn.value.trim()){ const y=parseInt(aar.value,10)||aarNu; if(k==="jul"){ navn.value="Jul "+y; dato.value=y+"-12-24"; } else if(k==="fdag") navn.value="Fødselsdage "+y; }
-    }},t)));
+    const type=lavSeg([["jul","Jul"],["fdag","Fødselsdage"],["andet","Andet"]], a?a.type:"andet", k=>{
+      if(!a && !navn.value.trim()){ const y=parseInt(aar.value,10)||aarNu; if(k==="jul"){ navn.value="Jul "+y; dato.value=y+"-12-24"; } else if(k==="fdag") navn.value="Fødselsdage "+y; } });
     const gem=()=>{
       const n=navn.value.trim(); if(!n){ toast("Skriv et navn"); navn.focus(); return; }
       let y=parseInt(aar.value,10); if(dato.value) y=parseInt(dato.value.slice(0,4),10); if(!(y>1900&&y<2200)) y=aarNu;
       const id=a?a.id:newId("anl");
-      put(id,Object.assign({},a||{},{kind:"anl",navn:n,type,aar:y,dato:dato.value||""}));
+      put(id,Object.assign({},a||{},{kind:"anl",navn:n,type:type.vaerdi(),aar:y,dato:dato.value||""}));
       vaelgAnl(id); lukArk(); toast(a?"Gemt":n+" er oprettet");
     };
     visArk(()=>[
       top(a?"Ret anledning":"Ny anledning"),
-      el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"},el("span",{class:"muted",style:"font-weight:500"},"Type"),seg),
+      segFelt("Type",type),
       felt("Navn",navn),
       el("div",{class:"row"},felt("År",aar),felt("Dato (valgfrit)",dato)),
-      a&&a.type==="fdag"? null : el("div",{class:"muted"},"Tip: Brug én \"Fødselsdage\"-anledning pr. år til alle fødselsdage – så kan du se, hvad du har brugt på fødselsdage i alt."),
+      el("div",{class:"muted"},"Tip: Brug én \"Fødselsdage\"-anledning pr. år til alle fødselsdage – så kan du se, hvad du har brugt på fødselsdage i alt."),
       el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
-      a? el("button",{type:"button",class:"btn danger",onclick:()=>{
-        const gs=gaver(null,a.id); const bs=levende("budget").filter(b=>b.anlId===a.id);
-        if(!confirm("Slet "+a.navn+(gs.length?" og "+gs.length+" gave(r)":"")+"?")) return;
-        const kopi=[Object.assign({},a),...gs,...bs].map(r=>Object.assign({},r));
-        for(const r of [...gs,...bs]) del(r.id); del(a.id); valgtAnl=null; lukArk();
+      a&&erAdmin()? el("button",{type:"button",class:"btn danger",onclick:()=>{
+        const rs=[...levende("gave"),...levende("koeb"),...levende("budget")].filter(r=>r.anlId===a.id);
+        if(!confirm("Slet "+a.navn+(rs.length?" og alt hvad der hører til":"")+"?")) return;
+        const kopi=[a,...rs].map(r=>Object.assign({},r));
+        for(const r of rs) del(r.id); del(a.id); valgtAnl=null; lukArk();
         toast(a.navn+" er slettet",()=>{ kopi.forEach(gendan); vaelgAnl(a.id); });
       }},"Slet anledning") : null
     ].filter(Boolean));
   }
 
-  // ================= INDSTILLINGER (⚙️): del + vejledning =================
+  // ================= INDSTILLINGER (⚙️) =================
   async function delTekst(titel,tekst,url){
     if(navigator.share){ try{ await navigator.share(Object.assign({title:titel,text:tekst},url?{url}:{})); return; }catch(e){ if(e&&e.name==="AbortError") return; } }
     try{ await navigator.clipboard.writeText(url? tekst+"\n"+url : tekst); toast(url?"Linket er kopieret":"Teksten er kopieret"); }catch(e){ toast("Kunne ikke kopiere"); }
   }
   function oversigtTekst(){
     const a=rec(valgtAnl); if(!a) return "";
-    const gs=gaver(null,a.id); const linjer=[a.navn+" – gaver ("+kr(sum(gs))+" i alt)",""];
-    for(const p of personer()){ const pg=gs.filter(g=>g.personId===p.id); if(!pg.length) continue;
-      linjer.push(p.navn+": "+kr(sum(pg))); for(const g of pg) linjer.push("  • "+(g.tekst||"?")+(g.pris?" – "+kr(g.pris):"")+" ("+STATUS[g.status]+")"); }
+    const linjer=[a.navn+" – gaver",""];
+    for(const p of personer()){ if(erMig(p.id)) continue; const gs=gaver(p.id,a.id); if(!gs.length) continue;
+      linjer.push(p.navn+":"); for(const g of gs){ const ks=koebTil(g.id); linjer.push("  • "+(g.tekst||"?")+(ks.length? " – købt af "+[...new Set(ks.map(koeberNavn))].join(", ")+" ("+kr(sumPris(ks))+")" : " – idé"+(g.pris?" ("+kr(g.pris)+")":""))); } }
     return linjer.join("\n");
   }
   function indstArk(){
     const link=location.origin+"/gaver-start";
-    const a=rec(valgtAnl);
     const trin=[
-      ["Tilføj personer","under 👥 Personer. Skriv gerne fødselsdag (så kommer de på listen over næste fødselsdage) og et fast budget, fx 300 kr – det gælder så for alle anledninger."],
-      ["Vælg anledning","øverst på 🎁 Oversigt: Jul 2026, Jul 2027, Fødselsdage 2026 osv. Tryk + Anledning for at lave flere, fx en konfirmation."],
-      ["Tilføj en gave","med den røde + Gave-knap: vælg person og anledning, skriv hvad det er og prisen. Start som Idé."],
-      ["Køb ind","under 🛍️ Indkøb står alle idéer der mangler at blive købt. Tryk Købt ✓, når den er i hus. Når gaven er givet, sætter du den til Givet."],
-      ["Hold øje med budgettet","Oversigten viser hvad du har brugt i alt, og hver person bliver rød, hvis du er over budget. Et andet beløb til én anledning sætter du inde på personen."],
-      ["Sammenlign","tryk på en person for at se hvad de har fået til hver anledning – fx Jul 26 mod Jul 27."],
-      ["Kigger nogen med?","tryk på personen → 🙈 Skjul, eller skjul dem her under ⚙️. Så kan de ikke se deres egne gaver. Vis dem igen her."]
+      ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det)."],
+      ["Del listen","med knappen herunder. De andre logger ind med deres egen Home Assistant-bruger og vælger deres navn under ✋ Hvem er du?. Så kan de ikke se, hvad der er købt til dem."],
+      ["Ønsker","Når du har valgt dit navn, kan du skrive dine egne ønsker på dig selv. De bliver stående hos dig, også når nogen har købt dem."],
+      ["Tilføj en gave","med + Gave. Skriv antal, hvis der ønskes flere stk. Vælg \"Jeg har købt den\" hvis den allerede er købt."],
+      ["Køb ind","under 🛍️ Indkøb står alle idéer og ønsker, der mangler at blive købt. Tryk Købt ✓. Ønskes der 3 stk og er der købt 1, bliver den stående med \"2 mangler\"."],
+      ["Budget","Oversigten viser hvad du har brugt, og hvad alle har brugt. En person bliver rød, hvis du er over dit budget."],
+      ["Kigger nogen med?","tryk på personen → 🙈 Skjul. Det gælder kun på denne telefon."]
     ];
-    const tegn=()=>{ const alle=allePersoner(); const skjulte=alle.filter(p=>p.skjult); return [
-      top("Indstillinger","Gaver v"+VERSION),
-      alle.length? el("div",{class:"card",style:"margin-top:0"},
-        el("h2",null,"🙈 Skjul personer"),
-        el("div",{class:"muted"},"Kigger en person med? Skjul dem, så deres gaver, priser og budget forsvinder fra hele appen – også fra totalerne. Tryk igen for at vise dem."),
-        el("div",{class:"chips",style:"flex-wrap:wrap"},...alle.map(p=>el("button",{type:"button","aria-pressed":String(!!p.skjult),onclick:()=>saetSkjult(p,!p.skjult)},(p.skjult?"🙈 ":"")+p.navn))),
-        skjulte.length? el("button",{type:"button",class:"btn",onclick:()=>{ for(const p of skjulte) saetSkjult(p,false); toast("Alle vises igen"); }},"Vis alle igen") : null) : null,
+    const tegn=()=>{ const alle=allePersoner(); const mine=minePersoner(); return [
+      top("Indstillinger","Gaver v"+VERSION+(mig? " · "+mig.navn+(erAdmin()?" (administrator)":"") : "")),
       el("div",{class:"card",style:"margin-top:0"},
+        el("h2",null,"✋ Hvem er du?"),
+        mine.length? el("div",null,"Du er ",el("b",null,mine.map(p=>p.navn).join(", ")),". Du kan ikke se, hvad der er købt til dig.") : el("div",{class:"muted"},"Du har ikke valgt dit navn. Du kan kun vælge én gang."),
+        mine.length? null : el("button",{type:"button",class:"btn",onclick:hvemArk},"Vælg mit navn")),
+      erAdmin()? adminKort() : null,
+      el("div",{class:"card"},
         el("h2",null,"Del"),
-        el("button",{type:"button",class:"btn primary",onclick:()=>delTekst("Gaver","Gaver – hold styr på gaver og priser",link)},"Del link til appen"),
-        el("div",{class:"muted"},"Den der åbner linket logger ind med sin egen Home Assistant-bruger og får sin egen gaveliste – dine gaver kan ikke ses."),
-        a? el("button",{type:"button",class:"btn",onclick:()=>delTekst(a.navn,oversigtTekst())},"Del oversigt over "+a.navn) : null,
-        a? el("button",{type:"button",class:"btn",onclick:()=>delTekst(a.navn,listeTekst())},"Del indkøbsliste for "+a.navn) : null,
-        el("div",{class:"muted"},"Oversigten sendes som almindelig tekst, fx i en besked eller i Noter.")),
-      el("div",{class:"card"},
-        el("h2",null,"Sådan bruger du Gaver"),
-        el("ol",{class:"guide"},...trin.map(([t,x])=>el("li",null,el("b",null,t)," ",x)))),
-      el("div",{class:"card"},
-        el("h2",null,"På iPhone"),
+        el("button",{type:"button",class:"btn primary",onclick:()=>delTekst("Gaver","Vores fælles gaveliste – log ind, tryk ✋ og vælg dit navn",link)},"Del gavelisten"),
+        el("div",{class:"muted"},"Alle deler den samme liste. Den der får linket skal have en bruger i Home Assistant (Indstillinger → Personer). Når de har valgt deres navn, kan de ikke se købene til sig selv – heller ikke hvis de leder i data."),
+        rec(valgtAnl)? el("button",{type:"button",class:"btn",onclick:()=>delTekst(anlNavn(valgtAnl),oversigtTekst())},"Del oversigt over "+anlNavn(valgtAnl)+" som tekst") : null,
+        rec(valgtAnl)? el("button",{type:"button",class:"btn",onclick:()=>delTekst(anlNavn(valgtAnl),listeTekst())},"Del indkøbsliste som tekst") : null,
+        el("div",{class:"muted"},"⚠️ En oversigt sendt som tekst viser alt – send den ikke til nogen, der er på den.")),
+      alle.length? el("div",{class:"card"},
+        el("h2",null,"🙈 Skjul personer på denne telefon"),
+        el("div",{class:"muted"},"Kigger en person med over skulderen? Skjul dem, så deres gaver og priser forsvinder fra skærmen – også fra totalerne. Tryk igen for at vise dem."),
+        el("div",{class:"chips",style:"flex-wrap:wrap"},...alle.filter(p=>!erMig(p.id)).map(p=>el("button",{type:"button","aria-pressed":String(skjulte.has(p.id)),onclick:()=>saetSkjult(p.id,!skjulte.has(p.id))},(skjulte.has(p.id)?"🙈 ":"")+p.navn))),
+        skjulte.size? el("button",{type:"button",class:"btn",onclick:()=>{ skjulte=new Set(); ls.set("gv_skjult",[]); renderAll(); toast("Alle vises igen"); }},"Vis alle igen") : null) : null,
+      el("div",{class:"card"}, el("h2",null,"Sådan bruger du Gaver"), el("ol",{class:"guide"},...trin.map(([t,x])=>el("li",null,el("b",null,t)," ",x)))),
+      el("div",{class:"card"}, el("h2",null,"På iPhone"),
         el("div",{class:"muted"},"Åbn "+link+" i Safari → Del → Føj til hjemmeskærm. Appen virker også uden dækning og sender ændringerne, når der er forbindelse igen."))
     ].filter(Boolean); };
-    visArk(tegn); aabentArk=()=>$("ark").replaceChildren(...tegn());
+    visArk(tegn,true);
   }
   $("tandhjul").addEventListener("click",indstArk);
 
+  // ---- administratorer: åbn "det er mig" igen og vælg administratorer ----
+  let brugere=null, brugereFejl="";
+  async function hentBrugere(){
+    if(!HA){ brugere=[{id:"lokal",navn:"Mig",haAdmin:true,admin:true,person:""}]; return; }
+    try{ const r=await api("/api/gaver/brugere"); if(!r.ok) throw new Error(r.status); brugere=(await r.json()).brugere||[]; brugereFejl=""; }
+    catch(e){ brugereFejl="Kunne ikke hente brugerne – prøv igen, når der er forbindelse."; }
+    if(aabentArk) aabentArk();
+  }
+  async function saetAdmin(b,v){
+    try{ const r=await api("/api/gaver/brugere",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:b.id,admin:v})}); if(!r.ok) throw new Error(r.status);
+      toast(b.navn+(v?" er nu administrator":" er ikke længere administrator")); }catch(e){ toast("Det lykkedes ikke – prøv igen"); }
+    hentBrugere();
+  }
+  function adminKort(){
+    if(brugere===null && !brugereFejl){ hentBrugere(); }
+    const claimed=allePersoner().filter(p=>p.brugerId);
+    return el("div",{class:"card"},
+      el("h2",null,"🔑 Administrator"),
+      el("div",{class:"muted"},"Kun administratorer kan åbne for \"det er mig\" igen, slette personer og anledninger, og vælge andre administratorer."),
+      el("h3",null,"Hvem er hvem"),
+      claimed.length? el("div",{class:"list"},...claimed.map(p=>el("div",{class:"item",style:"cursor:default"},
+        el("div",{class:"txt"},el("span",{class:"navn"},p.navn),el("span",{class:"muted"},"✋ "+(p.brugerNavn||"en bruger"))),
+        el("button",{type:"button",class:"btn small",onclick:()=>{ if(!confirm("Åbn for "+p.navn+" igen? Så kan "+(p.brugerNavn||"brugeren")+" vælge et andet navn – og kan se, hvad der er købt til "+p.navn+", indtil der er valgt igen.")) return; put(p.id,Object.assign({},p,{brugerId:""})); toast(p.navn+" er åbnet igen"); }},"Åbn igen"))))
+        : el("div",{class:"empty"},"Ingen har valgt deres navn endnu."),
+      el("h3",null,"Administratorer"),
+      brugereFejl? el("div",{class:"muted"},brugereFejl) : brugere===null? el("div",{class:"muted"},"Henter brugere …") :
+      el("div",{class:"list"},...brugere.map(b=>el("div",{class:"item",style:"cursor:default"},
+        el("div",{class:"txt"},el("span",{class:"navn"},b.navn+(mig&&b.id===mig.id?" (dig)":"")), el("span",{class:"muted"}, b.haAdmin? "Administrator i Home Assistant" : (b.person? "✋ "+b.person : "Har ikke valgt navn"))),
+        b.haAdmin||(mig&&b.id===mig.id)? el("span",{class:"pill koebt"},"Admin") :
+          el("button",{type:"button",class:"btn small"+(b.admin?" ok":""),onclick:()=>saetAdmin(b,!b.admin)},b.admin?"Admin ✓":"Gør til admin"))))
+    );
+  }
   // ================= LOGIN (samme Home Assistant-login som de andre apps) =================
-  const HA = location.pathname.startsWith("/gaver-app/");
   let inFrame=false; try{ inFrame = window.self !== window.top; }catch(e){ inFrame=true; }
   const APP_BASE = location.origin + "/gaver-app/";
   const CLIENT_ID = APP_BASE, REDIRECT_URI = APP_BASE + "index.html";
@@ -633,11 +807,15 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     try{
       const sent={}; const poster=[];
       for(const id of db.dirty){ const r=db.records[id]; if(r){ sent[id]=r.updated; poster.push(r); } }
+      await hentMig();
       const res=await api("/api/gaver/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({poster})});
       if(!res.ok) throw new Error("sync "+res.status);
       const j=await res.json(); let changed=false;
-      for(const r of (j.poster||[])){ if(!r||!r.id) continue; const cur=db.records[r.id]; if(!cur || (r.updated||0)>(cur.updated||0)){ db.records[r.id]=r; changed=true; } }
+      const set=new Set();
+      for(const r of (j.poster||[])){ if(!r||!r.id) continue; set.add(r.id); const cur=db.records[r.id]; if(!cur || (r.updated||0)>(cur.updated||0) || (!db.dirty.includes(r.id) && JSON.stringify(cur)!==JSON.stringify(r))){ db.records[r.id]=r; changed=true; } }
       db.dirty=db.dirty.filter(id=>!(id in sent) || (db.records[id] && db.records[id].updated!==sent[id]));
+      // Serveren sender alt, man må se. Det den ikke sender (fx køb til én selv), fjernes fra telefonen.
+      if(j.fuld) for(const id of Object.keys(db.records)) if(!set.has(id) && !db.dirty.includes(id)){ delete db.records[id]; changed=true; }
       persist(); if(changed) renderAll();
       syncState.last=Date.now(); ls.set("gv_lastSync",syncState.last);
       if(minTur===syncTur) setSync("ok");
@@ -650,6 +828,9 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     }finally{
       if(minTur===syncTur){ syncing=false; if(syncAgain){ syncAgain=false; scheduleSync(500); } }
     }
+  }
+  async function hentMig(){
+    try{ const r=await api("/api/gaver/mig"); if(r.ok){ const m=await r.json(); const skift=!mig||mig.id!==m.id||mig.admin!==m.admin||mig.navn!==m.navn; mig=m; ls.set("gv_mig",m); if(skift){ brugere=null; renderAll(); } } }catch(e){ if(e.login) throw e; }
   }
   function scheduleSync(ms){ if(!HA) return; clearTimeout(syncTimer); syncTimer=setTimeout(sync,ms); drawSync(); }
   $("syncBar").addEventListener("click",()=>{ syncState.status==="login" ? startLogin() : sync(); });
