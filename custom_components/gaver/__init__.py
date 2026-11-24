@@ -30,7 +30,7 @@ WWW = Path(__file__).parent / "www"
 FAELLES = "faelles.json"
 BRUGERE = "brugere.json"  # {bruger-id: {"admin": bool}} – administratorer i appen
 # Felter der bevares på en slettet post, så den stadig kan filtreres rigtigt.
-META = ("kind", "personId", "anlId", "gaveId", "bruger", "oprettetAf", "koebtAf")
+META = ("kind", "personId", "anlId", "gaveId", "bruger", "deltMed", "oprettetAf", "koebtAf")
 
 
 def _konverter(uid: str, poster: dict) -> list[dict]:
@@ -157,7 +157,8 @@ class Store:
         """Må brugeren ikke se denne post?"""
         k = r.get("kind")
         if k in ("budget", "pbud"):
-            return r.get("bruger") != uid
+            # et budget kan deles med andre brugere (fx forældre om et barns gaver)
+            return r.get("bruger") != uid and uid not in (r.get("deltMed") or [])
         if r.get("personId") in mine:
             if k == "koeb":
                 return True
@@ -193,7 +194,7 @@ class Store:
                 if r.get("deleted"):
                     if k in ("person", "anl") and not admin:
                         continue
-                    if k == "koeb" and cur is not None and cur.get("koebtAf") != uid and not admin:
+                    if k == "koeb" and cur is not None and cur.get("koebtAf") != uid and uid not in (cur.get("fraGruppe") or []) and not admin:
                         continue
                 elif k == "person":
                     gl = (cur or {}).get("brugerId") or ""
@@ -211,7 +212,7 @@ class Store:
                 elif k == "gave":
                     r["oprettetAf"] = cur.get("oprettetAf", uid) if cur else uid
                 elif k == "koeb":
-                    if cur is not None and cur.get("koebtAf") != uid and not admin:
+                    if cur is not None and cur.get("koebtAf") != uid and uid not in (cur.get("fraGruppe") or []) and not admin:
                         continue
                     r["koebtAf"] = cur.get("koebtAf", uid) if cur else uid
                     if not cur:
@@ -219,7 +220,9 @@ class Store:
                     elif cur.get("koebtNavn"):
                         r["koebtNavn"] = cur["koebtNavn"]
                 elif k in ("budget", "pbud"):
-                    r["bruger"] = uid
+                    r["bruger"] = cur.get("bruger", uid) if cur else uid
+                    dm = r.get("deltMed")
+                    r["deltMed"] = sorted({d for d in dm if isinstance(d, str) and _USER_RE.match(d) and d != r["bruger"]}) if isinstance(dm, list) else []
                 if self._skjult(r, mine, uid):
                     continue  # fx et køb til en selv
                 data[rid] = r
@@ -287,7 +290,8 @@ class MigView(HomeAssistantView):
 
 
 class BrugereView(HomeAssistantView):
-    """Kun for administratorer. GET: alle brugere. POST {"id", "admin"}: gør en bruger til (eller fjern som) administrator."""
+    """GET: alle brugere (til at dele budget; administratorer får også admin-oplysninger).
+    POST {"id", "admin"} (kun administratorer): gør en bruger til (eller fjern som) administrator."""
 
     url = "/api/gaver/brugere"
     name = "api:gaver:brugere"
@@ -299,16 +303,18 @@ class BrugereView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         u = request["hass_user"]
-        if not await er_admin(self.hass, self.store, u):
-            return self.json_message("Kun for administratorer", 403)
+        admin = await er_admin(self.hass, self.store, u)
         app = await self.hass.async_add_executor_job(self.store.app_admins)
         claims = await self.hass.async_add_executor_job(self.store.claims)
         ud = []
         for b in await self.hass.auth.async_get_users():
             if b.system_generated or not b.is_active:
                 continue
-            ud.append({"id": b.id, "navn": b.name or "", "haAdmin": bool(b.is_admin), "admin": bool(b.is_admin) or b.id in app,
-                       "person": claims.get(b.id, "")})
+            if admin:
+                ud.append({"id": b.id, "navn": b.name or "", "haAdmin": bool(b.is_admin), "admin": bool(b.is_admin) or b.id in app,
+                           "person": claims.get(b.id, "")})
+            else:
+                ud.append({"id": b.id, "navn": b.name or ""})
         ud.sort(key=lambda x: x["navn"].lower())
         return self.json({"brugere": ud})
 
