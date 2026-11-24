@@ -168,7 +168,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.1";
+  const VERSION = "0.7.2";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -777,10 +777,10 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       linjer.push(p.navn+":"); for(const g of gs){ const ks=koebTil(g.id); linjer.push("  • "+(g.tekst||"?")+(ks.length? " – købt af "+ogListe([...new Set(ks.map(koeberNavn))])+" ("+kr(sumPris(ks))+")" : " – idé"+(g.pris?" ("+kr(g.pris)+")":""))); } }
     return linjer.join("\n");
   }
-  // Afsnittene under ⚙️ er foldet sammen, hver gang tandhjulet åbnes. Det man folder ud, bliver ved med at være åbent, mens arket er fremme.
+  // Afsnittene under ⚙️ er foldet sammen, hver gang tandhjulet åbnes. Kun ét afsnit kan være åbent ad gangen – åbner man et, lukker de andre.
   let indstAabne=new Set();
   function fold(noegle,titel,...ind){
-    return el("details",{class:"card fold",open:indstAabne.has(noegle),ontoggle:e=>{ if(e.target.open) indstAabne.add(noegle); else indstAabne.delete(noegle); }},
+    return el("details",{class:"card fold",open:indstAabne.has(noegle),ontoggle:e=>{ const d=e.target; if(d.open){ indstAabne=new Set([noegle]); $("ark").querySelectorAll("details.fold[open]").forEach(x=>{ if(x!==d) x.open=false; }); } else indstAabne.delete(noegle); }},
       el("summary",null,el("h2",null,titel)), el("div",{class:"foldInd"},...ind));
   }
   function indstArk(){
