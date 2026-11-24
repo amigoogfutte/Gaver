@@ -69,6 +69,12 @@ textarea{min-height:70px;resize:vertical}
 .empty{color:var(--muted);padding:8px 0}
 details.mere summary{cursor:pointer;color:var(--muted);font-weight:600;padding:6px 0;list-style:none}
 details.mere summary::-webkit-details-marker{display:none}
+details.fold{display:block}
+details.fold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-16px;padding:16px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::after{content:"▸";color:var(--muted);font-size:18px;transition:transform .15s}
+details.fold[open]>summary::after{transform:rotate(90deg)}
+details.fold>.foldInd{display:flex;flex-direction:column;gap:12px;margin-top:28px}
 .sektion{border-top:1px solid var(--soft);padding-top:12px;display:flex;flex-direction:column;gap:8px}
 .sektion:first-of-type{border-top:none;padding-top:0}
 .sekhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -162,7 +168,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.0";
+  const VERSION = "0.7.1";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -771,7 +777,14 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       linjer.push(p.navn+":"); for(const g of gs){ const ks=koebTil(g.id); linjer.push("  • "+(g.tekst||"?")+(ks.length? " – købt af "+ogListe([...new Set(ks.map(koeberNavn))])+" ("+kr(sumPris(ks))+")" : " – idé"+(g.pris?" ("+kr(g.pris)+")":""))); } }
     return linjer.join("\n");
   }
+  // Afsnittene under ⚙️ er foldet sammen, hver gang tandhjulet åbnes. Det man folder ud, bliver ved med at være åbent, mens arket er fremme.
+  let indstAabne=new Set();
+  function fold(noegle,titel,...ind){
+    return el("details",{class:"card fold",open:indstAabne.has(noegle),ontoggle:e=>{ if(e.target.open) indstAabne.add(noegle); else indstAabne.delete(noegle); }},
+      el("summary",null,el("h2",null,titel)), el("div",{class:"foldInd"},...ind));
+  }
   function indstArk(){
+    indstAabne=new Set();
     const link=location.origin+"/gaver-start";
     const trin=[
       ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det)."],
@@ -784,25 +797,22 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     ];
     const tegn=()=>{ const alle=allePersoner(); const mine=minePersoner(); return [
       top("Indstillinger","Gaver v"+VERSION+(mig? " · "+mig.navn+(erAdmin()?" (administrator)":"") : "")),
-      el("div",{class:"card",style:"margin-top:0"},
-        el("h2",null,"✋ Hvem er du?"),
+      fold("hvem","✋ Hvem er du?",
         mine.length? el("div",null,"Du er ",el("b",null,mine.map(p=>p.navn).join(", ")),". Du kan ikke se, hvad der er købt til dig.") : el("div",{class:"muted"},"Du har ikke valgt dit navn. Du kan kun vælge én gang."),
         mine.length? null : el("button",{type:"button",class:"btn",onclick:hvemArk},"Vælg mit navn")),
       erAdmin()? adminKort() : null,
-      el("div",{class:"card"},
-        el("h2",null,"Del"),
+      fold("del","🔗 Del",
         el("button",{type:"button",class:"btn primary",onclick:()=>delTekst("Gaver","Vores fælles gaveliste – log ind, tryk ✋ og vælg dit navn",link)},"Del gavelisten"),
         el("div",{class:"muted"},"Alle deler den samme liste. Den der får linket skal have en bruger i Home Assistant (Indstillinger → Personer). Når de har valgt deres navn, kan de ikke se købene til sig selv – heller ikke hvis de leder i data."),
         rec(valgtAnl)? el("button",{type:"button",class:"btn",onclick:()=>delTekst(anlNavn(valgtAnl),oversigtTekst())},"Del oversigt over "+anlNavn(valgtAnl)+" som tekst") : null,
         rec(valgtAnl)? el("button",{type:"button",class:"btn",onclick:()=>delTekst(anlNavn(valgtAnl),listeTekst())},"Del indkøbsliste som tekst") : null,
         el("div",{class:"muted"},"⚠️ En oversigt sendt som tekst viser alt – send den ikke til nogen, der er på den.")),
-      alle.length? el("div",{class:"card"},
-        el("h2",null,"🙈 Skjul personer på denne telefon"),
+      alle.length? fold("skjul","🙈 Skjul personer på denne telefon",
         el("div",{class:"muted"},"Kigger en person med over skulderen? Skjul dem, så deres gaver og priser forsvinder fra skærmen – også fra totalerne. Tryk igen for at vise dem."),
         el("div",{class:"chips",style:"flex-wrap:wrap"},...alle.filter(p=>!erMig(p.id)).map(p=>el("button",{type:"button","aria-pressed":String(skjulte.has(p.id)),onclick:()=>saetSkjult(p.id,!skjulte.has(p.id))},(skjulte.has(p.id)?"🙈 ":"")+p.navn))),
         skjulte.size? el("button",{type:"button",class:"btn",onclick:()=>{ skjulte=new Set(); ls.set("gv_skjult",[]); renderAll(); toast("Alle vises igen"); }},"Vis alle igen") : null) : null,
-      el("div",{class:"card"}, el("h2",null,"Sådan bruger du Gaver"), el("ol",{class:"guide"},...trin.map(([t,x])=>el("li",null,el("b",null,t)," ",x)))),
-      el("div",{class:"card"}, el("h2",null,"På iPhone"),
+      fold("guide","📖 Sådan bruger du Gaver", el("ol",{class:"guide"},...trin.map(([t,x])=>el("li",null,el("b",null,t)," ",x)))),
+      fold("iphone","📱 På iPhone",
         el("div",{class:"muted"},"Åbn "+link+" i Safari → Del → Føj til hjemmeskærm. Appen virker også uden dækning og sender ændringerne, når der er forbindelse igen."))
     ].filter(Boolean); };
     visArk(tegn,true);
@@ -826,8 +836,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   function adminKort(){
     if(brugere===null && !brugereFejl){ hentBrugere(); }
     const claimed=allePersoner().filter(p=>p.brugerId);
-    return el("div",{class:"card"},
-      el("h2",null,"🔑 Administrator"),
+    return fold("admin","🔑 Administrator",
       el("div",{class:"muted"},"Kun administratorer kan åbne for \"det er mig\" igen, slette personer og anledninger, vælge andre administratorer og bestemme, hvem man kan dele budget med."),
       el("h3",null,"Hvem er hvem"),
       claimed.length? el("div",{class:"list"},...claimed.map(p=>el("div",{class:"item",style:"cursor:default"},
