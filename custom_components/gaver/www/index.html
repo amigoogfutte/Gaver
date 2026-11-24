@@ -77,6 +77,8 @@ details.mere summary::-webkit-details-marker{display:none}
 .gaverad .t b{font-weight:600;overflow-wrap:anywhere}
 .sammen{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:14px}
 .sammen .v{text-align:right;font-weight:650}
+.guide{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.4}
+.guide b{font-weight:650}
 #syncBar{font-size:13px;padding:8px 12px;border-radius:10px;margin-top:6px;cursor:pointer}
 #syncBar.ok{background:var(--green-soft);color:var(--green)}
 #syncBar.busy{background:var(--soft);color:var(--muted)}
@@ -100,7 +102,10 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <div class="wrap">
   <header class="top">
     <div><h1>Gaver</h1><div class="muted">Hvem får hvad – og for hvor meget</div></div>
-    <span class="muted" id="appVersion" style="font-size:12px"></span>
+    <div class="row" style="flex:0 0 auto;gap:4px;align-items:center">
+      <span class="muted" id="appVersion" style="font-size:12px"></span>
+      <button type="button" id="tandhjul" aria-label="Indstillinger" style="width:44px;height:44px;border:none;background:none;font-size:24px;line-height:1;cursor:pointer;padding:0">⚙️</button>
+    </div>
   </header>
   <div id="syncBar" class="hidden"></div>
 
@@ -155,7 +160,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.1.0";
+  const VERSION = "0.2.0";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -201,7 +206,9 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const anledninger = () => levende("anl").sort((a,b)=>(a.aar-b.aar)||((TYPEORD[a.type]??9)-(TYPEORD[b.type]??9))||String(a.dato||"").localeCompare(String(b.dato||""))||a.navn.localeCompare(b.navn,"da"));
   const gaver = (pid,aid) => levende("gave").filter(g=>(!pid||g.personId===pid)&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const sum = gs => gs.reduce((s,g)=>s+(Number(g.pris)||0),0);
-  const budget = (pid,aid) => { const b=rec("bud-"+pid+"-"+aid); return b? Number(b.beloeb)||0 : 0; };
+  const egetBudget = (pid,aid) => { const b=rec("bud-"+pid+"-"+aid); return b? Number(b.beloeb)||0 : 0; };
+  const fastBudget = pid => { const p=rec(pid); return p? Number(p.budget)||0 : 0; };
+  const budget = (pid,aid) => egetBudget(pid,aid) || fastBudget(pid);
   const STATUS={ide:"Idé",koebt:"Købt",givet:"Givet"};
   const statusPill = s => el("span",{class:"pill "+(STATUS[s]?s:"ide")},STATUS[s]||"Idé");
   const personNavn = id => { const p=rec(id); return p?p.navn:"(slettet person)"; };
@@ -263,7 +270,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
         el("div",{class:"stat"},el("b",null,String(gs.length)),el("span",null,gs.length===1?"gave":"gaver")))
     ].filter(Boolean));
     const med=[], uden=[];
-    for(const p of ps){ const pg=gs.filter(g=>g.personId===p.id); (pg.length||budget(p.id,a.id)? med : uden).push([p,pg]); }
+    for(const p of ps){ const pg=gs.filter(g=>g.personId===p.id); (pg.length||egetBudget(p.id,a.id)? med : uden).push([p,pg]); }
     if(a.type==="fdag"){ const nd=p=>{ if(!p.fdag) return 9999; return p.fdag; }; med.sort((x,y)=>String(nd(x[0])).localeCompare(String(nd(y[0])))); }
     $("ovAntal").textContent=med.length? med.length+" med gave":"";
     $("ovListe").replaceChildren(...(med.length? med.map(([p,pg])=>personRad(p,pg,a)) : [el("div",{class:"empty"}, ps.length? "Ingen gaver til "+a.navn+" endnu. Tryk + Gave." : "Start med at tilføje personer under Personer.")]));
@@ -324,7 +331,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
         el("div",{class:"txt"},el("span",{class:"navn"},p.navn), el("span",{class:"muted"},linjer.length? linjer.join(" · ") : "Ingen gaver endnu"),
           p.fdag? el("span",{class:"muted"},"🎂 "+fdagTekst(p)) : null),
-        el("span",{class:"tal"},kr(sum(gaver(p.id,null)))));
+        el("div",{class:"tal"},el("span",null,kr(sum(gaver(p.id,null)))), p.budget? el("span",{class:"muted",style:"font-weight:500;font-size:13px"},"budget "+kr(p.budget)) : null));
     }) : [el("div",{class:"empty"}, ps.length? "Ingen match." : "Ingen personer endnu.")]));
   }
   $("soeg").addEventListener("input",renderPersoner);
@@ -347,7 +354,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       const p=rec(pid); if(!p){ lukArk(); return []; }
       const f=naesteFdag(p);
       const anl=anledninger();
-      const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length || budget(pid,a.id));
+      const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length || egetBudget(pid,a.id));
       const sektioner=vist.map(a=>{
         const gs=gaver(pid,a.id), s=sum(gs), b=budget(pid,a.id);
         return el("div",{class:"sektion"},
@@ -358,13 +365,13 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
             el("div",{class:"tal",style:"display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-weight:700"}, kr(g.pris), statusPill(g.status)))),
           el("div",{class:"row"},
             el("button",{type:"button",class:"btn small",onclick:()=>gaveArk(null,{personId:pid,anlId:a.id,fraPerson:true})},"+ Gave"),
-            el("button",{type:"button",class:"btn small",onclick:()=>budgetArk(pid,a.id)}, b? "Budget "+kr(b) : "Sæt budget"))
+            el("button",{type:"button",class:"btn small",onclick:()=>budgetArk(pid,a.id)}, b? "Budget "+kr(b)+(egetBudget(pid,a.id)?"":" (fast)") : "Sæt budget"))
         );
       });
       const andre=anl.filter(a=>!vist.includes(a));
       const historik=anl.map(a=>[a,sum(gaver(pid,a.id))]).filter(x=>x[1]>0);
       return [
-        top(p.navn, [p.fdag? "Fødselsdag "+fdagTekst(p)+(f? " · "+omDage(f.dage)+(f.fylder?" · fylder "+f.fylder:"") : "") : null, p.note||null].filter(Boolean).join(" — ")),
+        top(p.navn, [p.budget? "Budget "+kr(p.budget)+" pr. anledning" : null, p.fdag? "Fødselsdag "+fdagTekst(p)+(f? " · "+omDage(f.dage)+(f.fylder?" · fylder "+f.fylder:"") : "") : null, p.note||null].filter(Boolean).join(" — ")),
         historik.length>1? el("div",{class:"card",style:"margin-top:0"}, el("h3",null,"Sammenligning"),
           el("div",{class:"sammen"}, ...historik.flatMap(([a,s])=>[el("span",null,a.navn), el("span",{class:"v"},kr(s))]),
             el("span",null,el("b",null,"I alt")), el("span",{class:"v"},kr(sum(gaver(pid,null)))))) : null,
@@ -386,18 +393,21 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     const aar=el("input",{type:"number",inputmode:"numeric",placeholder:"År (valgfrit)",value:p&&p.fAar?p.fAar:""});
     if(p&&p.fdag){ const [m,d]=p.fdag.split("-"); mdr.value=m; dag.value=d; }
     const note=el("textarea",{placeholder:"Fx størrelser, ønsker, hvad de har i forvejen …"},p&&p.note||"");
+    const bud=el("input",{type:"text",inputmode:"decimal",placeholder:"Fx 300 (valgfrit)",value:p&&p.budget?String(p.budget).replace(".",","):""});
     const gem=()=>{
       const n=navn.value.trim(); if(!n){ toast("Skriv et navn"); navn.focus(); return; }
       const fdag=(dag.value&&mdr.value)? mdr.value+"-"+dag.value : "";
       const fa=parseInt(aar.value,10);
       const id=p?p.id:newId("p");
-      put(id,Object.assign({},p||{},{kind:"person",navn:n,fdag,fAar:(fa>1900&&fa<2100)?fa:"",note:note.value.trim()}));
+      put(id,Object.assign({},p||{},{kind:"person",navn:n,fdag,fAar:(fa>1900&&fa<2100)?fa:"",budget:tal(bud.value),note:note.value.trim()}));
       toast(p?"Gemt":n+" er tilføjet"); personArk(id);
     };
     visArk(()=>[
       top(p?"Ret person":"Ny person"),
       felt("Navn",navn),
       el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"}, el("span",{class:"muted",style:"font-weight:500"},"Fødselsdag (valgfrit)"), el("div",{class:"row"},dag,mdr,aar)),
+      felt("Budget pr. anledning (kr)",bud),
+      el("div",{class:"muted"},"Gælder for alle anledninger – jul, fødselsdag osv. Du kan give en enkelt anledning et andet beløb inde på personen."),
       felt("Note",note),
       el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
       p? el("button",{type:"button",class:"btn danger",onclick:()=>{
@@ -451,11 +461,11 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 
   // --- budget ---
   function budgetArk(pid,aid){
-    const b=budget(pid,aid);
+    const b=egetBudget(pid,aid), fb=fastBudget(pid);
     const inp=el("input",{type:"text",inputmode:"decimal",value:b?String(b).replace(".",","):"",placeholder:"Fx 300"});
     const gem=()=>{ const v=tal(inp.value); const id="bud-"+pid+"-"+aid; if(v>0) put(id,{kind:"budget",personId:pid,anlId:aid,beloeb:v}); else if(rec(id)) del(id); personArk(pid); };
     visArk(()=>[ top("Budget", personNavn(pid)+" · "+anlNavn(aid)), felt("Hvor meget vil du højst bruge? (kr)",inp),
-      el("div",{class:"muted"},"Lad feltet stå tomt for intet budget."),
+      el("div",{class:"muted"}, fb? "Lad feltet stå tomt for at bruge det faste budget på "+kr(fb)+"." : "Lad feltet stå tomt for intet budget. Et fast budget for alle anledninger sætter du under Ret person."),
       el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
       el("button",{type:"button",class:"btn",onclick:()=>personArk(pid)},"Tilbage") ]);
     setTimeout(()=>inp.focus(),50);
@@ -495,6 +505,48 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       }},"Slet anledning") : null
     ].filter(Boolean));
   }
+
+  // ================= INDSTILLINGER (⚙️): del + vejledning =================
+  async function delTekst(titel,tekst,url){
+    if(navigator.share){ try{ await navigator.share(Object.assign({title:titel,text:tekst},url?{url}:{})); return; }catch(e){ if(e&&e.name==="AbortError") return; } }
+    try{ await navigator.clipboard.writeText(url? tekst+"\n"+url : tekst); toast(url?"Linket er kopieret":"Teksten er kopieret"); }catch(e){ toast("Kunne ikke kopiere"); }
+  }
+  function oversigtTekst(){
+    const a=rec(valgtAnl); if(!a) return "";
+    const gs=gaver(null,a.id); const linjer=[a.navn+" – gaver ("+kr(sum(gs))+" i alt)",""];
+    for(const p of personer()){ const pg=gs.filter(g=>g.personId===p.id); if(!pg.length) continue;
+      linjer.push(p.navn+": "+kr(sum(pg))); for(const g of pg) linjer.push("  • "+(g.tekst||"?")+(g.pris?" – "+kr(g.pris):"")+" ("+STATUS[g.status]+")"); }
+    return linjer.join("\n");
+  }
+  function indstArk(){
+    const link=location.origin+"/gaver-start";
+    const a=rec(valgtAnl);
+    const trin=[
+      ["Tilføj personer","under 👥 Personer. Skriv gerne fødselsdag (så kommer de på listen over næste fødselsdage) og et fast budget, fx 300 kr – det gælder så for alle anledninger."],
+      ["Vælg anledning","øverst på 🎁 Oversigt: Jul 2026, Jul 2027, Fødselsdage 2026 osv. Tryk + Anledning for at lave flere, fx en konfirmation."],
+      ["Tilføj en gave","med den røde + Gave-knap: vælg person og anledning, skriv hvad det er og prisen. Start som Idé."],
+      ["Køb ind","under 🛍️ Indkøb står alle idéer der mangler at blive købt. Tryk Købt ✓, når den er i hus. Når gaven er givet, sætter du den til Givet."],
+      ["Hold øje med budgettet","Oversigten viser hvad du har brugt i alt, og hver person bliver rød, hvis du er over budget. Et andet beløb til én anledning sætter du inde på personen."],
+      ["Sammenlign","tryk på en person for at se hvad de har fået til hver anledning – fx Jul 26 mod Jul 27."]
+    ];
+    visArk(()=>[
+      top("Indstillinger","Gaver v"+VERSION),
+      el("div",{class:"card",style:"margin-top:0"},
+        el("h2",null,"Del"),
+        el("button",{type:"button",class:"btn primary",onclick:()=>delTekst("Gaver","Gaver – hold styr på gaver og priser",link)},"Del link til appen"),
+        el("div",{class:"muted"},"Den der åbner linket logger ind med sin egen Home Assistant-bruger og får sin egen gaveliste – dine gaver kan ikke ses."),
+        a? el("button",{type:"button",class:"btn",onclick:()=>delTekst(a.navn,oversigtTekst())},"Del oversigt over "+a.navn) : null,
+        a? el("button",{type:"button",class:"btn",onclick:()=>delTekst(a.navn,listeTekst())},"Del indkøbsliste for "+a.navn) : null,
+        el("div",{class:"muted"},"Oversigten sendes som almindelig tekst, fx i en besked eller i Noter.")),
+      el("div",{class:"card"},
+        el("h2",null,"Sådan bruger du Gaver"),
+        el("ol",{class:"guide"},...trin.map(([t,x])=>el("li",null,el("b",null,t)," ",x)))),
+      el("div",{class:"card"},
+        el("h2",null,"På iPhone"),
+        el("div",{class:"muted"},"Åbn "+link+" i Safari → Del → Føj til hjemmeskærm. Appen virker også uden dækning og sender ændringerne, når der er forbindelse igen."))
+    ].filter(Boolean));
+  }
+  $("tandhjul").addEventListener("click",indstArk);
 
   // ================= LOGIN (samme Home Assistant-login som de andre apps) =================
   const HA = location.pathname.startsWith("/gaver-app/");

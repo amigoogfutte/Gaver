@@ -5,7 +5,8 @@ Hold styr på hvem der får hvad i gave – og hvor meget du bruger på hver per
 - **Personer**: tilføj familie og venner, gerne med fødselsdag (så får du en liste over de næste fødselsdage) og en note med ønsker og størrelser.
 - **Anledninger**: *Jul 2026*, *Jul 2027*, *Fødselsdage 2026* og *Fødselsdage 2027* er oprettet fra start. Opret selv flere, fx konfirmation, bryllup eller *Jul 2028*.
 - **Gaver**: hvad, pris, hvor den er fra, og status *Idé → Købt → Givet*.
-- **Budget**: sæt et beløb pr. person pr. anledning og se, om du er over eller under.
+- **Budget**: giv hver person et fast budget (fx 300 kr), som gælder for alle anledninger – eller et andet beløb til én bestemt anledning. Se om du er over eller under.
+- **⚙️ Indstillinger**: del link til appen, del oversigt eller indkøbsliste som tekst, og en kort vejledning.
 - **Oversigt**: hvad du har brugt i alt til den valgte anledning, og hvad hver person får.
 - **Indkøb**: idéer der mangler at blive købt, og personer der mangler en gave. Listen kan deles.
 - **Sammenligning**: på hver person kan du se, hvad de har fået til de forskellige anledninger (fx Jul 2026 mod Jul 2027).
