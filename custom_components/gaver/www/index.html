@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Gaver">
+<meta name="theme-color" content="#A3311F">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Gaver</title>
+<style>
+:root{
+  --bg:#F6F3F1; --card:#FFFFFF; --ink:#1E1A19; --muted:#615956; --line:#D3CAC6; --soft:#ECE5E2;
+  --accent:#A3311F; --accent-soft:#FBE9E6; --green:#1F6F5C; --green-soft:#E3F1EC; --gold:#8A5A00; --gold-soft:#FFF3DA;
+  --warn-bg:#FFF3E6; --warn-ink:#6B3A10;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-tap-highlight-color:transparent;font-size:16px}
+button,input,select,textarea{font:inherit;color:inherit}
+html,body,button,a,input,select,textarea,summary,label{touch-action:manipulation}
+.hidden{display:none!important}
+.wrap{max-width:620px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 16px calc(100px + env(safe-area-inset-bottom))}
+header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:10px 0 6px}
+h1{margin:0;font-size:26px;font-weight:700}
+h2{margin:0;font-size:17px;font-weight:650}
+h3{margin:0;font-size:15px;font-weight:650}
+.muted{color:var(--muted);font-size:14px}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-top:12px;display:flex;flex-direction:column;gap:12px}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:500;color:var(--muted);min-width:0}
+input[type=text],input[type=search],input[type=number],input[type=date],select,textarea{width:100%;min-height:48px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff;font-size:16px}
+textarea{min-height:70px;resize:vertical}
+.row{display:flex;gap:8px;align-items:center}
+.row > *{flex:1;min-width:0}
+.btn{min-height:48px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:15px;padding:0 14px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.small{min-height:38px;font-size:14px;padding:0 12px;flex:0 0 auto}
+.btn.danger{color:var(--accent);border-color:#E3B9B1}
+.btn.ok{background:var(--green);border-color:var(--green);color:#fff}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;background:var(--soft);padding:4px;border-radius:12px}
+.seg button{min-height:44px;border:none;border-radius:9px;background:transparent;font-weight:650;cursor:pointer}
+.seg button[aria-pressed=true]{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chips button{flex:0 0 auto;min-height:40px;padding:0 14px;border-radius:20px;border:1px solid var(--line);background:#fff;font-weight:600;cursor:pointer;white-space:nowrap}
+.chips button[aria-pressed=true]{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chips button.ny{border-style:dashed;color:var(--muted)}
+.big{font-size:30px;font-weight:750;line-height:1.1}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--soft);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px}
+.stat b{font-size:18px}
+.stat span{font-size:12px;color:var(--muted)}
+.bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--green);border-radius:4px}
+.bar.over i{background:var(--accent)}
+.list{display:flex;flex-direction:column}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--soft);cursor:pointer;background:none;border-left:none;border-right:none;border-bottom:none;text-align:left;width:100%}
+.item:first-child{border-top:none}
+.item .txt{display:flex;flex-direction:column;gap:3px;min-width:0}
+.item .navn{font-weight:600;overflow-wrap:anywhere}
+.item .tal{font-weight:700;white-space:nowrap;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.pill.ide{background:var(--gold-soft);color:var(--gold)}
+.pill.koebt{background:var(--green-soft);color:var(--green)}
+.pill.givet{background:var(--soft);color:var(--muted)}
+.pill.over{background:var(--accent-soft);color:var(--accent)}
+.empty{color:var(--muted);padding:8px 0}
+details.mere summary{cursor:pointer;color:var(--muted);font-weight:600;padding:6px 0;list-style:none}
+details.mere summary::-webkit-details-marker{display:none}
+.sektion{border-top:1px solid var(--soft);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.sektion:first-of-type{border-top:none;padding-top:0}
+.sekhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.gaverad{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:12px;cursor:pointer;border:none;width:100%;text-align:left}
+.gaverad .t{display:flex;flex-direction:column;gap:3px;min-width:0}
+.gaverad .t b{font-weight:600;overflow-wrap:anywhere}
+.sammen{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:14px}
+.sammen .v{text-align:right;font-weight:650}
+#syncBar{font-size:13px;padding:8px 12px;border-radius:10px;margin-top:6px;cursor:pointer}
+#syncBar.ok{background:var(--green-soft);color:var(--green)}
+#syncBar.busy{background:var(--soft);color:var(--muted)}
+#syncBar.login,#syncBar.error{background:var(--warn-bg);color:var(--warn-ink)}
+#syncBar.offline{background:var(--soft);color:var(--muted)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--soft);display:grid;grid-template-columns:repeat(3,1fr);padding:6px 8px calc(6px + env(safe-area-inset-bottom));z-index:20}
+nav.tabs button{border:none;background:none;min-height:52px;border-radius:12px;font-weight:650;font-size:14px;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;position:relative}
+nav.tabs button[aria-pressed=true]{color:var(--accent);background:var(--accent-soft)}
+nav.tabs .ik{font-size:20px;line-height:1}
+nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(--accent);color:#fff;font-size:11px;font-weight:700;border-radius:9px;padding:1px 6px}
+.fab{position:fixed;right:max(16px, calc(50% - 294px));bottom:calc(84px + env(safe-area-inset-bottom));min-height:56px;border-radius:28px;padding:0 22px;box-shadow:0 4px 14px rgba(163,49,31,.35);z-index:21}
+#arkBg{position:fixed;inset:0;background:rgba(25,15,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+#ark{background:var(--bg);width:100%;max-width:620px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
+#ark .arkTop{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#ark h2{font-size:20px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + env(safe-area-inset-top));min-width:260px;justify-content:space-between;background:#1E1A19;color:#fff;padding:12px 16px;border-radius:12px;font-size:15px;z-index:60;display:flex;gap:14px;align-items:center;max-width:92vw;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+#toast button{background:none;border:none;color:#F5B9AE;font-weight:700;font-size:15px;cursor:pointer;padding:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1>Gaver</h1><div class="muted">Hvem får hvad – og for hvor meget</div></div>
+    <span class="muted" id="appVersion" style="font-size:12px"></span>
+  </header>
+  <div id="syncBar" class="hidden"></div>
+
+  <!-- ===== Oversigt ===== -->
+  <section id="v-oversigt">
+    <div class="chips" id="anlChips" style="margin-top:10px"></div>
+    <div class="card" id="anlKort"></div>
+    <div class="card">
+      <div class="sekhead"><h2>Personer</h2><span class="muted" id="ovAntal"></span></div>
+      <div class="list" id="ovListe"></div>
+      <details class="mere" id="ovUden"><summary></summary><div class="list" id="ovUdenListe"></div></details>
+    </div>
+  </section>
+
+  <!-- ===== Indkøb ===== -->
+  <section id="v-indkoeb" class="hidden">
+    <div class="chips" id="anlChips2" style="margin-top:10px"></div>
+    <div class="card">
+      <div class="sekhead"><h2>Skal købes</h2><button type="button" class="btn small" id="delListe">Del liste</button></div>
+      <div class="muted">Gaver der stadig er en idé. Tryk <b>Købt</b>, når den er købt.</div>
+      <div class="list" id="ideListe"></div>
+    </div>
+    <div class="card">
+      <h2>Mangler en gave</h2>
+      <div class="muted">Personer uden gave til denne anledning endnu.</div>
+      <div class="list" id="manglerListe"></div>
+    </div>
+  </section>
+
+  <!-- ===== Personer ===== -->
+  <section id="v-personer" class="hidden">
+    <div class="card" id="fdagKort"></div>
+    <div class="card">
+      <input type="search" id="soeg" placeholder="Søg efter person …" autocomplete="off">
+      <div class="list" id="personListe"></div>
+      <button type="button" class="btn primary" id="nyPerson">+ Tilføj person</button>
+    </div>
+  </section>
+</div>
+
+<button type="button" class="btn primary fab" id="fab">+ Gave</button>
+
+<nav class="tabs">
+  <button type="button" data-v="oversigt" aria-pressed="true"><span class="ik">🎁</span>Oversigt</button>
+  <button type="button" data-v="indkoeb" aria-pressed="false"><span class="ik">🛍️</span>Indkøb<span class="badge hidden" id="ideBadge"></span></button>
+  <button type="button" data-v="personer" aria-pressed="false"><span class="ik">👥</span>Personer</button>
+</nav>
+
+<div id="arkBg" class="hidden"><div id="ark" role="dialog" aria-modal="true"></div></div>
+<div id="toast" class="hidden"></div>
+
+<script>
+(function(){
+  "use strict";
+  const VERSION = "0.1.0";
+  const $ = id => document.getElementById(id);
+  function el(tag, attrs, ...kids){
+    const e=document.createElement(tag);
+    if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue;
+      if(k.startsWith("on")) e.addEventListener(k.slice(2),v);
+      else if(k==="class") e.className=v; else if(k==="style") e.setAttribute("style",v);
+      else if(k==="value") e.value=v; else if(k==="checked") e.checked=!!v; else e.setAttribute(k,v===true?"":v); }
+    for(const c of kids.flat()){ if(c==null||c===false) continue; e.appendChild(typeof c==="object"?c:document.createTextNode(String(c))); }
+    return e;
+  }
+  function newId(p){ return p+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
+  const kr = n => (Math.round((Number(n)||0)*100)/100).toLocaleString("da-DK",{minimumFractionDigits:0,maximumFractionDigits:2})+" kr";
+  const tal = v => { const n=parseFloat(String(v||"").replace(/\./g,"").replace(",",".")); return isFinite(n)&&n>=0 ? n : 0; };
+  const ls = { get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
+  const MDR=["januar","februar","marts","april","maj","juni","juli","august","september","oktober","november","december"];
+
+  let toastT=null;
+  function toast(msg, fortryd){
+    const t=$("toast"); t.replaceChildren(el("span",null,msg));
+    if(fortryd) t.appendChild(el("button",{type:"button",onclick:()=>{ t.classList.add("hidden"); fortryd(); }},"Fortryd"));
+    t.classList.remove("hidden"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.add("hidden"), fortryd?6000:2600);
+  }
+
+  // ================= DATA =================
+  // person  {kind:"person", navn, fdag:"MM-DD"|"" , fAar, note}
+  // anl     {kind:"anl", navn, type:"jul"|"fdag"|"andet", aar, dato:"YYYY-MM-DD"|""}
+  // gave    {kind:"gave", personId, anlId, tekst, pris, status:"ide"|"koebt"|"givet", butik, note, oprettet}
+  // budget  {kind:"budget", personId, anlId, beloeb}   id = "bud-<person>-<anl>"
+  const DATAKEY="gv_data_v1";
+  let db = ls.get(DATAKEY,null); if(!db||!db.records) db={records:{},dirty:[]};
+  // Standard-anledninger. Samme id på alle enheder, updated=1 så alt fra serveren vinder.
+  for(const [id,navn,type,aar,dato] of [["anl-jul-2026","Jul 2026","jul",2026,"2026-12-24"],["anl-jul-2027","Jul 2027","jul",2027,"2027-12-24"],["anl-fdag-2026","Fødselsdage 2026","fdag",2026,""],["anl-fdag-2027","Fødselsdage 2027","fdag",2027,""]])
+    if(!db.records[id]) db.records[id]={id,updated:1,kind:"anl",navn,type,aar,dato};
+  function persist(){ try{ localStorage.setItem(DATAKEY, JSON.stringify(db)); }catch(e){ toast("Telefonen kunne ikke gemme"); } }
+  const levende = kind => Object.values(db.records).filter(r=>r && !r.deleted && r.kind===kind);
+  function put(id,data){ const prev=db.records[id]; const now=Math.max(Date.now(), prev?(prev.updated||0)+1:0); db.records[id]=Object.assign({},data,{id,updated:now}); if(!db.dirty.includes(id)) db.dirty.push(id); persist(); renderAll(); scheduleSync(1200); return db.records[id]; }
+  function del(id){ const prev=db.records[id]; const now=Math.max(Date.now(), prev?(prev.updated||0)+1:0); db.records[id]={id,updated:now,deleted:true,kind:prev?prev.kind:""}; if(!db.dirty.includes(id)) db.dirty.push(id); persist(); renderAll(); scheduleSync(1200); }
+  function gendan(rec){ put(rec.id, Object.assign({},rec)); }
+  const rec = id => { const r=db.records[id]; return r && !r.deleted ? r : null; };
+
+  const personer = () => levende("person").sort((a,b)=>a.navn.localeCompare(b.navn,"da"));
+  const TYPEORD={jul:0,fdag:1,andet:2};
+  const anledninger = () => levende("anl").sort((a,b)=>(a.aar-b.aar)||((TYPEORD[a.type]??9)-(TYPEORD[b.type]??9))||String(a.dato||"").localeCompare(String(b.dato||""))||a.navn.localeCompare(b.navn,"da"));
+  const gaver = (pid,aid) => levende("gave").filter(g=>(!pid||g.personId===pid)&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
+  const sum = gs => gs.reduce((s,g)=>s+(Number(g.pris)||0),0);
+  const budget = (pid,aid) => { const b=rec("bud-"+pid+"-"+aid); return b? Number(b.beloeb)||0 : 0; };
+  const STATUS={ide:"Idé",koebt:"Købt",givet:"Givet"};
+  const statusPill = s => el("span",{class:"pill "+(STATUS[s]?s:"ide")},STATUS[s]||"Idé");
+  const personNavn = id => { const p=rec(id); return p?p.navn:"(slettet person)"; };
+  const anlNavn = id => { const a=rec(id); return a?a.navn:"(slettet anledning)"; };
+
+  // valgt anledning: den første kommende jul ellers den første
+  let valgtAnl = ls.get("gv_valgt",null);
+  function sikrValgt(){
+    const alle=anledninger(); if(valgtAnl && alle.some(a=>a.id===valgtAnl)) return;
+    const aar=new Date().getFullYear();
+    valgtAnl=(alle.find(a=>a.type==="jul"&&a.aar>=aar)||alle.find(a=>a.aar>=aar)||alle[0]||{}).id||null;
+  }
+  function vaelgAnl(id){ valgtAnl=id; ls.set("gv_valgt",id); renderAll(); }
+
+  // fødselsdage
+  function naesteFdag(p){
+    if(!p.fdag || !/^\d\d-\d\d$/.test(p.fdag)) return null;
+    const [m,d]=p.fdag.split("-").map(Number); const nu=new Date(); nu.setHours(0,0,0,0);
+    let dt=new Date(nu.getFullYear(),m-1,d); if(dt<nu) dt=new Date(nu.getFullYear()+1,m-1,d);
+    const dage=Math.round((dt-nu)/864e5);
+    const fylder=p.fAar? dt.getFullYear()-Number(p.fAar) : null;
+    return {dt,dage,fylder};
+  }
+  const fdagTekst = p => { if(!p.fdag) return ""; const [m,d]=p.fdag.split("-").map(Number); return d+". "+MDR[m-1]; };
+  const omDage = n => n===0?"i dag":n===1?"i morgen":"om "+n+" dage";
+
+  // ================= VISNING =================
+  let visning="oversigt";
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>{
+    visning=b.dataset.v; document.querySelectorAll("nav.tabs button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+    for(const v of ["oversigt","indkoeb","personer"]) $("v-"+v).classList.toggle("hidden",v!==visning);
+    window.scrollTo(0,0);
+  }));
+
+  function tegnChips(boks){
+    const alle=anledninger();
+    boks.replaceChildren(...alle.map(a=>el("button",{type:"button","aria-pressed":String(a.id===valgtAnl),onclick:()=>vaelgAnl(a.id)},a.navn)),
+      el("button",{type:"button",class:"ny",onclick:()=>anlArk(null)},"+ Anledning"));
+    const v=boks.querySelector('[aria-pressed="true"]'); if(v) requestAnimationFrame(()=>{ try{ v.scrollIntoView({block:"nearest",inline:"center"}); }catch(e){} });
+  }
+
+  function renderOversigt(){
+    tegnChips($("anlChips"));
+    const a=rec(valgtAnl); const k=$("anlKort");
+    if(!a){ k.replaceChildren(el("div",{class:"empty"},"Opret en anledning for at komme i gang.")); $("ovListe").replaceChildren(); $("ovUden").classList.add("hidden"); $("ovAntal").textContent=""; return; }
+    const gs=gaver(null,a.id); const brugt=sum(gs);
+    const ps=personer(); const budgetTotal=ps.reduce((s,p)=>s+budget(p.id,a.id),0);
+    const koebt=sum(gs.filter(g=>g.status!=="ide")), ideer=sum(gs.filter(g=>g.status==="ide"));
+    const over=budgetTotal>0 && brugt>budgetTotal;
+    k.replaceChildren(...[
+      el("div",{class:"sekhead"}, el("div",null, el("h2",null,a.navn), a.dato? el("div",{class:"muted"},datoTekst(a.dato)) : null),
+        el("button",{type:"button",class:"btn small",onclick:()=>anlArk(a)},"Ret")),
+      el("div",null, el("div",{class:"muted"},"I alt til gaver"), el("div",{class:"big"},kr(brugt)),
+        budgetTotal? el("div",{class:"muted"},"af budget "+kr(budgetTotal)+(over?" – "+kr(brugt-budgetTotal)+" over":" – "+kr(budgetTotal-brugt)+" tilbage")) : null),
+      budgetTotal? el("div",{class:"bar"+(over?" over":"")}, el("i",{style:"width:"+Math.min(100,brugt/budgetTotal*100).toFixed(1)+"%"})) : null,
+      el("div",{class:"stats"},
+        el("div",{class:"stat"},el("b",null,kr(koebt)),el("span",null,"købt / givet")),
+        el("div",{class:"stat"},el("b",null,kr(ideer)),el("span",null,"idéer (ikke købt)")),
+        el("div",{class:"stat"},el("b",null,String(gs.length)),el("span",null,gs.length===1?"gave":"gaver")))
+    ].filter(Boolean));
+    const med=[], uden=[];
+    for(const p of ps){ const pg=gs.filter(g=>g.personId===p.id); (pg.length||budget(p.id,a.id)? med : uden).push([p,pg]); }
+    if(a.type==="fdag"){ const nd=p=>{ if(!p.fdag) return 9999; return p.fdag; }; med.sort((x,y)=>String(nd(x[0])).localeCompare(String(nd(y[0])))); }
+    $("ovAntal").textContent=med.length? med.length+" med gave":"";
+    $("ovListe").replaceChildren(...(med.length? med.map(([p,pg])=>personRad(p,pg,a)) : [el("div",{class:"empty"}, ps.length? "Ingen gaver til "+a.navn+" endnu. Tryk + Gave." : "Start med at tilføje personer under Personer.")]));
+    $("ovUden").classList.toggle("hidden",!uden.length);
+    $("ovUden").querySelector("summary").textContent="Uden gave endnu ("+uden.length+") ▾";
+    $("ovUdenListe").replaceChildren(...uden.map(([p])=>el("button",{type:"button",class:"item",onclick:()=>gaveArk(null,{personId:p.id,anlId:a.id})},
+      el("div",{class:"txt"},el("span",{class:"navn"},p.navn), a.type==="fdag"&&p.fdag? el("span",{class:"muted"},"Fødselsdag "+fdagTekst(p)) : null),
+      el("span",{class:"muted"},"+ Gave"))));
+  }
+  function personRad(p,pg,a){
+    const s=sum(pg), b=budget(p.id,a.id); const ide=pg.filter(g=>g.status==="ide").length;
+    const tekst=pg.map(g=>g.tekst).filter(Boolean).join(", ");
+    return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
+      el("div",{class:"txt"}, el("span",{class:"navn"},p.navn),
+        tekst? el("span",{class:"muted"},tekst) : el("span",{class:"muted"},"Ingen gave valgt endnu"),
+        a.type==="fdag"&&p.fdag? el("span",{class:"muted"},"🎂 "+fdagTekst(p)) : null),
+      el("div",{class:"tal"}, el("span",null,kr(s)),
+        b? el("span",{class:"pill "+(s>b?"over":"koebt")},s>b? kr(s-b)+" over" : "budget "+kr(b)) : null,
+        ide? el("span",{class:"pill ide"},ide+(ide===1?" idé":" idéer")) : null));
+  }
+  function datoTekst(d){ if(!d) return ""; const [y,m,dd]=d.split("-").map(Number); return dd+". "+MDR[m-1]+" "+y; }
+
+  function renderIndkoeb(){
+    tegnChips($("anlChips2"));
+    const a=rec(valgtAnl);
+    const ideer=a? gaver(null,a.id).filter(g=>g.status==="ide").sort((x,y)=>personNavn(x.personId).localeCompare(personNavn(y.personId),"da")) : [];
+    $("ideListe").replaceChildren(...(ideer.length? ideer.map(g=>el("div",{class:"item",style:"cursor:default"},
+      el("div",{class:"txt",style:"cursor:pointer",onclick:()=>gaveArk(g)}, el("span",{class:"navn"},g.tekst||"(uden navn)"),
+        el("span",{class:"muted"},personNavn(g.personId)+(g.pris?" · "+kr(g.pris):"")+(g.butik?" · "+g.butik:""))),
+      el("button",{type:"button",class:"btn small ok",onclick:()=>{ const f=Object.assign({},g); put(g.id,Object.assign({},g,{status:"koebt"})); toast("Markeret som købt",()=>gendan(f)); }},"Købt ✓")))
+      : [el("div",{class:"empty"},"Ingen idéer der mangler at blive købt.")]));
+    const uden=a? personer().filter(p=>!gaver(p.id,a.id).length) : [];
+    $("manglerListe").replaceChildren(...(uden.length? uden.map(p=>el("button",{type:"button",class:"item",onclick:()=>gaveArk(null,{personId:p.id,anlId:a.id})},
+      el("span",{class:"navn"},p.navn), el("span",{class:"muted"},"+ Gave"))) : [el("div",{class:"empty"},"Alle har en gave 🎉")]));
+    const n=a? ideer.length:0; $("ideBadge").textContent=n; $("ideBadge").classList.toggle("hidden",!n);
+  }
+  function listeTekst(){
+    const a=rec(valgtAnl); if(!a) return "";
+    const ideer=gaver(null,a.id).filter(g=>g.status==="ide");
+    const linjer=[a.navn+" – skal købes:"]; for(const g of ideer) linjer.push("• "+personNavn(g.personId)+": "+(g.tekst||"?")+(g.pris?" ("+kr(g.pris)+")":"")+(g.butik?" – "+g.butik:""));
+    const uden=personer().filter(p=>!gaver(p.id,a.id).length); if(uden.length) linjer.push("","Mangler gave: "+uden.map(p=>p.navn).join(", "));
+    return linjer.join("\n");
+  }
+  $("delListe").addEventListener("click",async()=>{ const t=listeTekst(); if(navigator.share){ try{ await navigator.share({text:t}); return; }catch(e){ if(e&&e.name==="AbortError") return; } } try{ await navigator.clipboard.writeText(t); toast("Listen er kopieret"); }catch(e){ toast("Kunne ikke kopiere"); } });
+
+  function renderPersoner(){
+    const ps=personer();
+    const kommende=ps.map(p=>[p,naesteFdag(p)]).filter(x=>x[1]&&x[1].dage<=60).sort((a,b)=>a[1].dage-b[1].dage);
+    $("fdagKort").replaceChildren(el("h2",null,"🎂 Næste fødselsdage"),
+      ...(kommende.length? kommende.map(([p,f])=>el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
+        el("div",{class:"txt"},el("span",{class:"navn"},p.navn),el("span",{class:"muted"},fdagTekst(p)+(f.fylder?" · fylder "+f.fylder:""))),
+        el("span",{class:"tal"},omDage(f.dage)))) : [el("div",{class:"empty"},"Ingen fødselsdage de næste 60 dage.")]));
+    const q=$("soeg").value.trim().toLowerCase();
+    const vis=ps.filter(p=>!q||p.navn.toLowerCase().includes(q));
+    const anl=anledninger();
+    $("personListe").replaceChildren(...(vis.length? vis.map(p=>{
+      const linjer=anl.map(a=>[a,sum(gaver(p.id,a.id))]).filter(x=>x[1]>0).map(([a,s])=>a.navn+": "+kr(s));
+      return el("button",{type:"button",class:"item",onclick:()=>personArk(p.id)},
+        el("div",{class:"txt"},el("span",{class:"navn"},p.navn), el("span",{class:"muted"},linjer.length? linjer.join(" · ") : "Ingen gaver endnu"),
+          p.fdag? el("span",{class:"muted"},"🎂 "+fdagTekst(p)) : null),
+        el("span",{class:"tal"},kr(sum(gaver(p.id,null)))));
+    }) : [el("div",{class:"empty"}, ps.length? "Ingen match." : "Ingen personer endnu.")]));
+  }
+  $("soeg").addEventListener("input",renderPersoner);
+  $("nyPerson").addEventListener("click",()=>personRetArk(null));
+  $("fab").addEventListener("click",()=>gaveArk(null,{anlId:valgtAnl}));
+
+  function renderAll(){ sikrValgt(); renderOversigt(); renderIndkoeb(); renderPersoner(); if(aabentArk) aabentArk(); drawSync(); }
+
+  // ================= ARK (dialoger) =================
+  let aabentArk=null;   // gen-tegner det åbne ark ved ændringer
+  function visArk(tegn){ aabentArk=null; $("ark").replaceChildren(...tegn()); $("arkBg").classList.remove("hidden"); document.body.style.overflow="hidden"; }
+  function lukArk(){ aabentArk=null; $("arkBg").classList.add("hidden"); $("ark").replaceChildren(); document.body.style.overflow=""; }
+  $("arkBg").addEventListener("click",e=>{ if(e.target===$("arkBg")) lukArk(); });
+  const top = (titel, under) => el("div",{class:"arkTop"}, el("div",null, el("h2",null,titel), under? el("div",{class:"muted"},under):null), el("button",{type:"button",class:"btn small",onclick:lukArk},"Luk"));
+  function felt(lbl, input){ return el("label",{class:"f"},lbl,input); }
+
+  // --- person-detaljer ---
+  function personArk(pid){
+    const tegn=()=>{
+      const p=rec(pid); if(!p){ lukArk(); return []; }
+      const f=naesteFdag(p);
+      const anl=anledninger();
+      const vist=anl.filter(a=>a.id===valgtAnl || gaver(pid,a.id).length || budget(pid,a.id));
+      const sektioner=vist.map(a=>{
+        const gs=gaver(pid,a.id), s=sum(gs), b=budget(pid,a.id);
+        return el("div",{class:"sektion"},
+          el("div",{class:"sekhead"}, el("h3",null,a.navn), el("span",null, el("b",null,kr(s)), b? el("span",{class:"muted"}," / "+kr(b)) : null)),
+          b? el("div",{class:"bar"+(s>b?" over":"")}, el("i",{style:"width:"+Math.min(100,s/b*100).toFixed(1)+"%"})) : null,
+          ...gs.map(g=>el("button",{type:"button",class:"gaverad",onclick:()=>gaveArk(g,{fraPerson:true})},
+            el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"), (g.butik||g.note)? el("span",{class:"muted"},[g.butik,g.note].filter(Boolean).join(" · ")) : null),
+            el("div",{class:"tal",style:"display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-weight:700"}, kr(g.pris), statusPill(g.status)))),
+          el("div",{class:"row"},
+            el("button",{type:"button",class:"btn small",onclick:()=>gaveArk(null,{personId:pid,anlId:a.id,fraPerson:true})},"+ Gave"),
+            el("button",{type:"button",class:"btn small",onclick:()=>budgetArk(pid,a.id)}, b? "Budget "+kr(b) : "Sæt budget"))
+        );
+      });
+      const andre=anl.filter(a=>!vist.includes(a));
+      const historik=anl.map(a=>[a,sum(gaver(pid,a.id))]).filter(x=>x[1]>0);
+      return [
+        top(p.navn, [p.fdag? "Fødselsdag "+fdagTekst(p)+(f? " · "+omDage(f.dage)+(f.fylder?" · fylder "+f.fylder:"") : "") : null, p.note||null].filter(Boolean).join(" — ")),
+        historik.length>1? el("div",{class:"card",style:"margin-top:0"}, el("h3",null,"Sammenligning"),
+          el("div",{class:"sammen"}, ...historik.flatMap(([a,s])=>[el("span",null,a.navn), el("span",{class:"v"},kr(s))]),
+            el("span",null,el("b",null,"I alt")), el("span",{class:"v"},kr(sum(gaver(pid,null)))))) : null,
+        el("div",{class:"card",style:"margin-top:0"}, ...sektioner,
+          andre.length? el("label",{class:"f"},"Tilføj gave til en anden anledning",
+            el("select",{onchange:e=>{ if(e.target.value) gaveArk(null,{personId:pid,anlId:e.target.value,fraPerson:true}); }},
+              el("option",{value:""},"Vælg anledning …"), ...andre.map(a=>el("option",{value:a.id},a.navn)))) : null),
+        el("div",{class:"row"}, el("button",{type:"button",class:"btn",onclick:()=>personRetArk(p)},"Ret person"))
+      ].filter(Boolean);
+    };
+    visArk(tegn); aabentArk=()=>$("ark").replaceChildren(...tegn());
+  }
+
+  // --- opret/ret person ---
+  function personRetArk(p){
+    const navn=el("input",{type:"text",value:p?p.navn:"",placeholder:"Fx Mormor, Søren, Lise og Kim",autocapitalize:"words"});
+    const dag=el("select",null,el("option",{value:""},"Dag"),...Array.from({length:31},(_,i)=>el("option",{value:String(i+1).padStart(2,"0")},String(i+1))));
+    const mdr=el("select",null,el("option",{value:""},"Måned"),...MDR.map((m,i)=>el("option",{value:String(i+1).padStart(2,"0")},m)));
+    const aar=el("input",{type:"number",inputmode:"numeric",placeholder:"År (valgfrit)",value:p&&p.fAar?p.fAar:""});
+    if(p&&p.fdag){ const [m,d]=p.fdag.split("-"); mdr.value=m; dag.value=d; }
+    const note=el("textarea",{placeholder:"Fx størrelser, ønsker, hvad de har i forvejen …"},p&&p.note||"");
+    const gem=()=>{
+      const n=navn.value.trim(); if(!n){ toast("Skriv et navn"); navn.focus(); return; }
+      const fdag=(dag.value&&mdr.value)? mdr.value+"-"+dag.value : "";
+      const fa=parseInt(aar.value,10);
+      const id=p?p.id:newId("p");
+      put(id,Object.assign({},p||{},{kind:"person",navn:n,fdag,fAar:(fa>1900&&fa<2100)?fa:"",note:note.value.trim()}));
+      toast(p?"Gemt":n+" er tilføjet"); personArk(id);
+    };
+    visArk(()=>[
+      top(p?"Ret person":"Ny person"),
+      felt("Navn",navn),
+      el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"}, el("span",{class:"muted",style:"font-weight:500"},"Fødselsdag (valgfrit)"), el("div",{class:"row"},dag,mdr,aar)),
+      felt("Note",note),
+      el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
+      p? el("button",{type:"button",class:"btn danger",onclick:()=>{
+        const gs=gaver(p.id,null); if(!confirm("Slet "+p.navn+(gs.length?" og "+gs.length+" gave(r)":"")+"?")) return;
+        const kopi=[Object.assign({},p),...gs.map(g=>Object.assign({},g))];
+        for(const g of gs) del(g.id); del(p.id); lukArk();
+        toast(p.navn+" er slettet",()=>kopi.forEach(gendan));
+      }},"Slet person") : null
+    ].filter(Boolean));
+    if(!p) setTimeout(()=>navn.focus(),50);
+  }
+
+  // --- opret/ret gave ---
+  function gaveArk(g, std){
+    std=std||{};
+    const ps=personer(), anl=anledninger();
+    if(!ps.length){ toast("Tilføj en person først"); personRetArk(null); return; }
+    if(!anl.length){ toast("Opret en anledning først"); anlArk(null); return; }
+    const pSel=el("select",null,el("option",{value:""},"Vælg person …"),...ps.map(p=>el("option",{value:p.id},p.navn)));
+    pSel.value=g?g.personId:(std.personId||"");
+    const aSel=el("select",null,...anl.map(a=>el("option",{value:a.id},a.navn)));
+    aSel.value=g?g.anlId:(std.anlId&&rec(std.anlId)?std.anlId:anl[0].id);
+    const tekst=el("input",{type:"text",value:g?g.tekst:"",placeholder:"Fx LEGO, gavekort, tørklæde …"});
+    const pris=el("input",{type:"text",inputmode:"decimal",value:g&&g.pris?String(g.pris).replace(".",","):"",placeholder:"0"});
+    let status=g?g.status:"ide";
+    const seg=el("div",{class:"seg"},...Object.keys(STATUS).map(k=>el("button",{type:"button","aria-pressed":String(k===status),onclick:e=>{ status=k; seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget))); }},STATUS[k])));
+    const butik=el("input",{type:"text",value:g?g.butik||"":"",placeholder:"Fx Føtex, Zalando, link …"});
+    const note=el("textarea",{placeholder:"Størrelse, farve, byttekvittering …"},g?g.note||"":"");
+    const gem=(igen)=>{
+      if(!pSel.value){ toast("Vælg en person"); return; }
+      if(!tekst.value.trim() && !tal(pris.value)){ toast("Skriv hvad gaven er eller hvad den koster"); tekst.focus(); return; }
+      const id=g?g.id:newId("g");
+      put(id,Object.assign({},g||{},{kind:"gave",personId:pSel.value,anlId:aSel.value,tekst:tekst.value.trim(),pris:tal(pris.value),status,butik:butik.value.trim(),note:note.value.trim(),oprettet:g?g.oprettet:Date.now()}));
+      toast(g?"Gemt":"Gaven er tilføjet");
+      if(igen) gaveArk(null,{personId:pSel.value,anlId:aSel.value,fraPerson:std.fraPerson}); else if(std.fraPerson) personArk(pSel.value); else lukArk();
+    };
+    visArk(()=>[
+      top(g?"Ret gave":"Ny gave"),
+      el("div",{class:"row"},felt("Til",pSel),felt("Anledning",aSel)),
+      felt("Gave",tekst),
+      felt("Pris (kr)",pris),
+      el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"},el("span",{class:"muted",style:"font-weight:500"},"Status"),seg),
+      felt("Hvor (butik / link)",butik),
+      felt("Note",note),
+      el("button",{type:"button",class:"btn primary",onclick:()=>gem(false)},"Gem"),
+      g? null : el("button",{type:"button",class:"btn",onclick:()=>gem(true)},"Gem og tilføj en til"),
+      g? el("button",{type:"button",class:"btn danger",onclick:()=>{ const kopi=Object.assign({},g); del(g.id); if(std.fraPerson) personArk(g.personId); else lukArk(); toast("Gaven er slettet",()=>gendan(kopi)); }},"Slet gave") : null
+    ].filter(Boolean));
+    if(!g) setTimeout(()=>(pSel.value?tekst:pSel).focus(),50);
+  }
+
+  // --- budget ---
+  function budgetArk(pid,aid){
+    const b=budget(pid,aid);
+    const inp=el("input",{type:"text",inputmode:"decimal",value:b?String(b).replace(".",","):"",placeholder:"Fx 300"});
+    const gem=()=>{ const v=tal(inp.value); const id="bud-"+pid+"-"+aid; if(v>0) put(id,{kind:"budget",personId:pid,anlId:aid,beloeb:v}); else if(rec(id)) del(id); personArk(pid); };
+    visArk(()=>[ top("Budget", personNavn(pid)+" · "+anlNavn(aid)), felt("Hvor meget vil du højst bruge? (kr)",inp),
+      el("div",{class:"muted"},"Lad feltet stå tomt for intet budget."),
+      el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
+      el("button",{type:"button",class:"btn",onclick:()=>personArk(pid)},"Tilbage") ]);
+    setTimeout(()=>inp.focus(),50);
+  }
+
+  // --- anledning ---
+  function anlArk(a){
+    const navn=el("input",{type:"text",value:a?a.navn:"",placeholder:"Fx Jul 2028, Maries konfirmation, Bryllup"});
+    let type=a?a.type:"andet";
+    const aarNu=new Date().getFullYear();
+    const aar=el("input",{type:"number",inputmode:"numeric",value:a?a.aar:aarNu});
+    const dato=el("input",{type:"date",value:a?a.dato||"":""});
+    const seg=el("div",{class:"seg"},...[["jul","Jul"],["fdag","Fødselsdage"],["andet","Andet"]].map(([k,t])=>el("button",{type:"button","aria-pressed":String(k===type),onclick:e=>{
+      type=k; seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget)));
+      if(!a && !navn.value.trim()){ const y=parseInt(aar.value,10)||aarNu; if(k==="jul"){ navn.value="Jul "+y; dato.value=y+"-12-24"; } else if(k==="fdag") navn.value="Fødselsdage "+y; }
+    }},t)));
+    const gem=()=>{
+      const n=navn.value.trim(); if(!n){ toast("Skriv et navn"); navn.focus(); return; }
+      let y=parseInt(aar.value,10); if(dato.value) y=parseInt(dato.value.slice(0,4),10); if(!(y>1900&&y<2200)) y=aarNu;
+      const id=a?a.id:newId("anl");
+      put(id,Object.assign({},a||{},{kind:"anl",navn:n,type,aar:y,dato:dato.value||""}));
+      vaelgAnl(id); lukArk(); toast(a?"Gemt":n+" er oprettet");
+    };
+    visArk(()=>[
+      top(a?"Ret anledning":"Ny anledning"),
+      el("div",{class:"f",style:"display:flex;flex-direction:column;gap:6px"},el("span",{class:"muted",style:"font-weight:500"},"Type"),seg),
+      felt("Navn",navn),
+      el("div",{class:"row"},felt("År",aar),felt("Dato (valgfrit)",dato)),
+      a&&a.type==="fdag"? null : el("div",{class:"muted"},"Tip: Brug én \"Fødselsdage\"-anledning pr. år til alle fødselsdage – så kan du se, hvad du har brugt på fødselsdage i alt."),
+      el("button",{type:"button",class:"btn primary",onclick:gem},"Gem"),
+      a? el("button",{type:"button",class:"btn danger",onclick:()=>{
+        const gs=gaver(null,a.id); const bs=levende("budget").filter(b=>b.anlId===a.id);
+        if(!confirm("Slet "+a.navn+(gs.length?" og "+gs.length+" gave(r)":"")+"?")) return;
+        const kopi=[Object.assign({},a),...gs,...bs].map(r=>Object.assign({},r));
+        for(const r of [...gs,...bs]) del(r.id); del(a.id); valgtAnl=null; lukArk();
+        toast(a.navn+" er slettet",()=>{ kopi.forEach(gendan); vaelgAnl(a.id); });
+      }},"Slet anledning") : null
+    ].filter(Boolean));
+  }
+
+  // ================= LOGIN (samme Home Assistant-login som de andre apps) =================
+  const HA = location.pathname.startsWith("/gaver-app/");
+  let inFrame=false; try{ inFrame = window.self !== window.top; }catch(e){ inFrame=true; }
+  const APP_BASE = location.origin + "/gaver-app/";
+  const CLIENT_ID = APP_BASE, REDIRECT_URI = APP_BASE + "index.html";
+  const authGet=()=>ls.get("gv_auth",null);
+  const authSet=a=>{ try{ a?localStorage.setItem("gv_auth",JSON.stringify(a)):localStorage.removeItem("gv_auth"); }catch(e){} };
+  function fetchT(url, opts, ms){ const ac=new AbortController(); const t=setTimeout(()=>ac.abort(), ms||20000); return fetch(url, Object.assign({}, opts||{}, {signal:ac.signal})).finally(()=>clearTimeout(t)); }
+  async function tokenRequest(params){
+    const r=await fetchT("/auth/token",{method:"POST",body:new URLSearchParams(params)});
+    if(!r.ok){ const e=new Error("auth "+r.status); e.status=r.status; throw e; }
+    const j=await r.json();
+    return {access_token:j.access_token, refresh_token:j.refresh_token||params.refresh_token, expires:Date.now()+(j.expires_in||1800)*1000, clientId:params.client_id};
+  }
+  async function parentToken(){
+    try{ if(!inFrame) return null; const ha=window.parent.document.querySelector("home-assistant"); const a=ha&&ha.hass&&ha.hass.auth; if(!a) return null; if(a.expired) await Promise.race([a.refreshAccessToken(), new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),15000))]); return a.accessToken||null; }catch(e){ return null; }
+  }
+  async function getToken(force){
+    const pt=await parentToken(); if(pt) return pt;
+    let a=authGet();
+    if(!a){ const h=ls.get("hassTokens",null); if(h&&h.refresh_token&&h.clientId) a={access_token:h.access_token,refresh_token:h.refresh_token,expires:h.expires||0,clientId:h.clientId,borrowed:true}; }
+    if(!a) return null;
+    if(!force && a.access_token && a.expires>Date.now()+30000) return a.access_token;
+    try{ const n=await tokenRequest({grant_type:"refresh_token",refresh_token:a.refresh_token,client_id:a.clientId}); if(!a.borrowed) authSet(n); return n.access_token; }
+    catch(e){ if(e.status===400||e.status===403){ if(!a.borrowed) authSet(null); return null; } throw e; }
+  }
+  function startLogin(){
+    const st=newId("s"); try{ localStorage.setItem("gv_state",st); }catch(e){}
+    location.href="/auth/authorize?response_type=code&client_id="+encodeURIComponent(CLIENT_ID)+"&redirect_uri="+encodeURIComponent(REDIRECT_URI)+"&state="+encodeURIComponent(st);
+  }
+  async function handleLoginReturn(){
+    if(!HA) return;
+    const q=new URLSearchParams(location.search); const code=q.get("code"); if(!code) return;
+    history.replaceState(null,"",location.pathname+location.hash);
+    let expected=null; try{ expected=localStorage.getItem("gv_state"); localStorage.removeItem("gv_state"); }catch(e){}
+    if(expected && q.get("state")!==expected){ toast("Login mislykkedes – prøv igen"); return; }
+    try{ authSet(await tokenRequest({grant_type:"authorization_code",code,client_id:CLIENT_ID})); toast("Logget ind"); }catch(e){ toast("Login mislykkedes – prøv igen"); }
+  }
+  async function api(path,opts={},retried){
+    const t=await getToken(retried);
+    if(!t){ const e=new Error("login"); e.login=true; throw e; }
+    const r=await fetchT(path,Object.assign({},opts,{headers:Object.assign({},opts.headers||{},{Authorization:"Bearer "+t})}));
+    if(r.status===401 && !retried) return api(path,opts,true);
+    if(r.status===401){ authSet(null); const e=new Error("login"); e.login=true; throw e; }
+    if(r.status===404){ const e=new Error("mangler"); e.missing=true; throw e; }
+    return r;
+  }
+
+  // ================= SYNKRONISERING =================
+  let syncState={status:HA?"idle":"off", last:ls.get("gv_lastSync",0), msg:""};
+  let syncing=false, syncAgain=false, syncTimer=null, syncStart=0, syncTur=0;
+  function syncText(){
+    const t=syncState.last? new Date(syncState.last).toLocaleTimeString("da-DK",{hour:"2-digit",minute:"2-digit"}) : "";
+    const n=db.dirty.length;
+    switch(syncState.status){
+      case "busy": return ["busy","Synkroniserer …"];
+      case "ok": return n? ["busy", n+" ændring(er) venter på at blive sendt"] : ["ok","Synkroniseret med server "+t];
+      case "login": return ["login","Ikke logget ind – tryk her for at logge ind på serveren"];
+      case "offline": return ["offline","Ingen forbindelse – gemmes på telefonen"+(n?" ("+n+" venter)":"")+" og sendes senere"];
+      case "error": return ["error",(syncState.msg||"Kunne ikke synkronisere")+" – tryk for at prøve igen"];
+      default: return ["busy","Forbinder …"];
+    }
+  }
+  function setSync(st,msg){ syncState.status=st; syncState.msg=msg||""; drawSync(); }
+  function drawSync(){ const b=$("syncBar"); if(!HA){ b.classList.add("hidden"); return; } const [cls,txt]=syncText(); b.className=cls; b.textContent=txt; }
+  async function sync(){
+    if(!HA) return;
+    if(syncing && Date.now()-syncStart<30000){ syncAgain=true; return; }
+    if(!navigator.onLine){ setSync("offline"); return; }
+    syncing=true; syncStart=Date.now(); const minTur=++syncTur; setSync("busy");
+    try{
+      const sent={}; const poster=[];
+      for(const id of db.dirty){ const r=db.records[id]; if(r){ sent[id]=r.updated; poster.push(r); } }
+      const res=await api("/api/gaver/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({poster})});
+      if(!res.ok) throw new Error("sync "+res.status);
+      const j=await res.json(); let changed=false;
+      for(const r of (j.poster||[])){ if(!r||!r.id) continue; const cur=db.records[r.id]; if(!cur || (r.updated||0)>(cur.updated||0)){ db.records[r.id]=r; changed=true; } }
+      db.dirty=db.dirty.filter(id=>!(id in sent) || (db.records[id] && db.records[id].updated!==sent[id]));
+      persist(); if(changed) renderAll();
+      syncState.last=Date.now(); ls.set("gv_lastSync",syncState.last);
+      if(minTur===syncTur) setSync("ok");
+    }catch(e){
+      if(minTur!==syncTur) return;
+      if(e.name==="AbortError") setSync("error","Serveren svarede ikke i tide");
+      else if(e.login) setSync("login");
+      else if(e.missing) setSync("error","Serveren svarer ikke");
+      else setSync(navigator.onLine?"error":"offline", navigator.onLine?"Kunne ikke synkronisere":"");
+    }finally{
+      if(minTur===syncTur){ syncing=false; if(syncAgain){ syncAgain=false; scheduleSync(500); } }
+    }
+  }
+  function scheduleSync(ms){ if(!HA) return; clearTimeout(syncTimer); syncTimer=setTimeout(sync,ms); drawSync(); }
+  $("syncBar").addEventListener("click",()=>{ syncState.status==="login" ? startLogin() : sync(); });
+
+  // ================= START =================
+  $("appVersion").textContent="v"+VERSION;
+  persist(); renderAll();
+  if("serviceWorker" in navigator && HA) navigator.serviceWorker.register("sw.js").catch(()=>{});
+  (async()=>{
+    await handleLoginReturn();
+    sync();
+    window.addEventListener("online",()=>sync());
+    document.addEventListener("visibilitychange",()=>{ if(!document.hidden) sync(); });
+    setInterval(()=>{ if(!document.hidden) sync(); },60000);
+  })();
+})();
+</script>
+</body>
+</html>
