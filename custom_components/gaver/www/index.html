@@ -22,7 +22,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-syst
 button,input,select,textarea{font:inherit;color:inherit}
 html,body,button,a,input,select,textarea,summary,label{touch-action:manipulation}
 .hidden{display:none!important}
-.wrap{max-width:620px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 16px calc(100px + env(safe-area-inset-bottom))}
+:root{--top:max(env(safe-area-inset-top,0px),env(titlebar-area-height,0px))}
+.wrap{max-width:620px;margin:0 auto;padding:calc(10px + var(--top)) 16px calc(100px + env(safe-area-inset-bottom))}
 header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:10px 0 6px}
 h1{margin:0;font-size:26px;font-weight:700}
 h2{margin:0;font-size:17px;font-weight:650}
@@ -96,11 +97,11 @@ nav.tabs button[aria-pressed=true]{color:var(--accent);background:var(--accent-s
 nav.tabs .ik{font-size:20px;line-height:1}
 nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(--accent);color:#fff;font-size:11px;font-weight:700;border-radius:9px;padding:1px 6px}
 .fab{position:fixed;right:max(16px, calc(50% - 294px));bottom:calc(84px + env(safe-area-inset-bottom));min-height:56px;border-radius:28px;padding:0 22px;box-shadow:0 4px 14px rgba(163,49,31,.35);z-index:21}
-#arkBg{position:fixed;inset:0;background:rgba(25,15,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
-#ark{background:var(--bg);width:100%;max-width:620px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
+#arkBg{position:fixed;inset:0;padding-top:calc(8px + var(--top));box-sizing:border-box;background:rgba(25,15,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+#ark{background:var(--bg);width:100%;max-width:620px;max-height:92vh;max-height:100%;overflow:auto;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
 #ark .arkTop{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 #ark h2{font-size:20px}
-#toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + env(safe-area-inset-top));min-width:260px;justify-content:space-between;background:#1E1A19;color:#fff;padding:12px 16px;border-radius:12px;font-size:15px;z-index:60;display:flex;gap:14px;align-items:center;max-width:92vw;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+#toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + var(--top));min-width:260px;justify-content:space-between;background:#1E1A19;color:#fff;padding:12px 16px;border-radius:12px;font-size:15px;z-index:60;display:flex;gap:14px;align-items:center;max-width:92vw;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 #toast button{background:none;border:none;color:#F5B9AE;font-weight:700;font-size:15px;cursor:pointer;padding:4px}
 </style>
 </head>
@@ -168,7 +169,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.3";
+  const VERSION = "0.7.4";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
