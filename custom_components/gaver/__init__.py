@@ -159,7 +159,10 @@ class Store:
         """Må brugeren ikke se denne post?"""
         k = r.get("kind")
         if k in ("budget", "pbud"):
-            # et budget kan deles med andre brugere (fx forældre om et barns gaver)
+            # et budget kan deles med andre brugere (fx forældre om et barns gaver),
+            # men aldrig med den person, budgettet handler om
+            if r.get("personId") in mine:
+                return True
             return r.get("bruger") != uid and uid not in (r.get("deltMed") or []) and uid not in (r.get("inviteret") or [])
         if r.get("personId") in mine:
             if k == "koeb":
@@ -241,6 +244,9 @@ class Store:
                     gl_delt = set((cur or {}).get("deltMed") or [])
                     gl_inv = set((cur or {}).get("inviteret") or [])
                     oensket = {d for d in (r.get("deltMed") or []) if isinstance(d, str) and _USER_RE.match(d)} - {ejer}
+                    modtager = (data.get(r.get("personId") or (cur or {}).get("personId") or "") or {}).get("brugerId")
+                    if modtager:
+                        oensket.discard(modtager)  # man kan ikke dele budgettet med den, det handler om
                     delt = gl_delt & oensket
                     nye = oensket - delt - gl_inv
                     nye -= skjulte_i_deling

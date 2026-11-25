@@ -169,7 +169,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.5";
+  const VERSION = "0.7.6";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -530,6 +530,15 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   }
 
   // --- vælg hvem et budget deles med ---
+  // Den person budgettet handler om, kan aldrig vælges: enten har de sagt "Det er mig", eller brugeren hedder det samme som personen.
+  const normNavn=t=>String(t||"").trim().toLowerCase().replace(/\s+/g," ");
+  function erModtager(b,p){
+    if(!p) return false;
+    if(p.brugerId) return p.brugerId===b.id;
+    const pn=normNavn(p.navn); if(!pn) return false;
+    const bn=normNavn(b.navn);
+    return normNavn(b.person)===pn || bn===pn || bn.split(" ")[0]===pn;
+  }
   function delVaelger(rec0, pid){
     const sel=new Set(rec0? [rec0.bruger,...(rec0.deltMed||[]),...(rec0.inviteret||[])].filter(u=>u!==migId()) : []);
     const venter=new Set(rec0? rec0.inviteret||[] : []);
@@ -538,14 +547,14 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       if(brugere===null && !brugereFejl){ box.replaceChildren(el("span",{class:"muted"},"Henter brugere …")); hentBrugere(true).then(tegn); return; }
       if(brugereFejl){ box.replaceChildren(el("span",{class:"muted"},brugereFejl)); return; }
       const p=rec(pid);
-      const andre=(brugere||[]).filter(b=>b.id!==migId() && !(p&&p.brugerId===b.id) && (!b.skjulIDeling || sel.has(b.id)));
+      const andre=(brugere||[]).filter(b=>b.id!==migId() && !erModtager(b,p) && (!b.skjulIDeling || sel.has(b.id)));
       box.replaceChildren(...(andre.length? andre.map(b=>el("button",{type:"button","aria-pressed":String(sel.has(b.id)),onclick:()=>{ sel.has(b.id)?sel.delete(b.id):sel.add(b.id); tegn(); }},(sel.has(b.id)? (venter.has(b.id)?"⏳ ":"👥 ") : "")+b.navn))
         : [el("span",{class:"muted"},"Der er ingen andre brugere endnu.")]),
         el("div",{class:"muted",style:"width:100%;font-size:13px"},"Den du vælger, skal godkende, før budgettet er fælles."));
     };
     tegn();
     // returnér {bruger, deltMed} til posten
-    box.gruppe=()=>{ const ejer=rec0? rec0.bruger : migId(); const alle=new Set([...sel, migId()]); alle.delete(ejer); return {bruger:ejer, deltMed:[...alle].sort()}; };
+    box.gruppe=()=>{ const ejer=rec0? rec0.bruger : migId(); const p=rec(pid); for(const b of brugere||[]) if(erModtager(b,p)) sel.delete(b.id); const alle=new Set([...sel, migId()]); alle.delete(ejer); return {bruger:ejer, deltMed:[...alle].sort()}; };
     return box;
   }
   function gemBudget(kind, id0, felter, v){
