@@ -169,7 +169,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.4";
+  const VERSION = "0.7.5";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -800,12 +800,13 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     indstAabne=new Set();
     hentEksternAdr();
     const trin=[
-      ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det)."],
-      ["Del listen","med knappen herunder. De andre logger ind med deres egen Home Assistant-bruger og vælger deres navn under ✋ Hvem er du?. Så kan de ikke se, hvad der er købt til dem."],
+      ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det, medmindre du deler det)."],
+      ["Del listen","under 🔗 Del. De andre logger ind med deres egen Home Assistant-bruger og vælger deres navn under ✋ Hvem er du?. Så kan de ikke se, hvad der er købt til dem."],
       ["Ønsker","Når du har valgt dit navn, kan du skrive dine egne ønsker på dig selv. De bliver stående hos dig, også når nogen har købt dem."],
       ["Tilføj en gave","med + Gave. Skriv antal, hvis der ønskes flere stk. Vælg \"Jeg har købt den\" hvis den allerede er købt."],
       ["Køb ind","under 🛍️ Indkøb står alle idéer og ønsker, der mangler at blive købt. Tryk Købt ✓. Ønskes der 3 stk og er der købt 1, bliver den stående med \"2 mangler\"."],
       ["Budget","Oversigten viser hvad du har brugt, og hvad alle har brugt. En person bliver rød, hvis du er over dit budget."],
+      ["Del budget","fx med den anden forælder: tryk på personen → Ret person (eller på budgettet for én anledning) og vælg under \"Del budgettet med\". Den anden får et kort øverst på oversigten og skal trykke Godkend – indtil da står der ⏳ Venter. Bagefter kan I begge se og rette beløbet, jeres køb tæller sammen mod budgettet, og gaverne står som \"Købt af\" jer begge. Tryk Afvis for at sige nej tak."],
       ["Kigger nogen med?","tryk på personen → 🙈 Skjul. Det gælder kun på denne telefon."]
     ];
     const tegn=()=>{ const link=startLink(); const alle=allePersoner(); const mine=minePersoner(); return [
