@@ -87,6 +87,10 @@ details.fold>.foldInd{display:flex;flex-direction:column;gap:12px;margin-top:28p
 .gaverad{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:12px;cursor:pointer;border:none;width:100%;text-align:left}
 .gaverad .t{display:flex;flex-direction:column;gap:3px;min-width:0}
 .gaverad .t b{font-weight:600;overflow-wrap:anywhere}
+.gaverad .t span{overflow-wrap:anywhere}
+.gaverad>.tal,.gaverad>div:last-child:not(.t){flex-shrink:0;white-space:nowrap}
+.item .txt{min-width:0}
+.item .txt .muted{overflow-wrap:anywhere}
 .sammen{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:14px}
 .sammen .v{text-align:right;font-weight:650}
 .guide{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.4}
@@ -174,7 +178,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.8.4";
+  const VERSION = "0.8.5";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -251,6 +255,14 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const anledninger = () => levende("anl").sort((a,b)=>(a.aar-b.aar)||((TYPEORD[a.type]??9)-(TYPEORD[b.type]??9))||String(a.dato||"").localeCompare(String(b.dato||""))||a.navn.localeCompare(b.navn,"da"));
   const gaver = (pid,aid) => levende("gave").filter(g=>(pid? g.personId===pid : synlig(g.personId))&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const koeb = (pid,aid) => levende("koeb").filter(k=>(pid? k.personId===pid : synlig(k.personId))&&(!aid||k.anlId===aid));
+  // Et link vises kort som "🔗 elgiganten.dk" i lister. Hele linket står stadig på gaven.
+  const erLink = t => /^(https?:\/\/|www\.)\S+$/i.test(String(t||"").trim());
+  function butikVis(t){
+    t=String(t||"").trim(); if(!t) return "";
+    if(!erLink(t)) return t;
+    try{ return "🔗 "+new URL(/^www\./i.test(t)? "https://"+t : t).hostname.replace(/^www\./i,""); }catch(e){ return "🔗 link"; }
+  }
+  const linkURL = t => { t=String(t||"").trim(); return /^www\./i.test(t)? "https://"+t : t; };
   const koebTil = gid => levende("koeb").filter(k=>k.gaveId===gid).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const kvitTil = gid => levende("kvit").filter(k=>k.gaveId===gid).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const mineKoeb = ks => ks.filter(k=>k.koebtAf===migId());
@@ -418,7 +430,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     const ideer=a&&!udloebet(a)? gaver(null,a.id).filter(g=>!erMig(g.personId)&&aaben(g)).sort((x,y)=>personNavn(x.personId).localeCompare(personNavn(y.personId),"da")) : [];
     $("ideListe").replaceChildren(...(ideer.length? ideer.map(g=>el("div",{class:"item",style:"cursor:default"},
       el("div",{class:"txt",style:"cursor:pointer",onclick:()=>gaveArk(g)}, el("span",{class:"navn"},g.tekst||"(uden navn)"),
-        el("span",{class:"muted"},[personNavn(g.personId), oensket(g)>1? mangler(g)+" af "+oensket(g)+" mangler" : null, g.pris? kr(g.pris)+(oensket(g)>1?" pr. stk":"") : null, g.butik||null].filter(Boolean).join(" · "))),
+        el("span",{class:"muted"},[personNavn(g.personId), oensket(g)>1? mangler(g)+" af "+oensket(g)+" mangler" : null, g.pris? kr(g.pris)+(oensket(g)>1?" pr. stk":"") : null, butikVis(g.butik)||null].filter(Boolean).join(" · "))),
       el("button",{type:"button",class:"btn small ok",onclick:()=>koebArk(g,null)},"Købt ✓")))
       : [el("div",{class:"empty"}, a&&udloebet(a)? a.navn+" ligger i arkivet." : "Ingen idéer der mangler at blive købt.")]));
     const uden=a&&!udloebet(a)? personer().filter(p=>!erMig(p.id)&&!gaver(p.id,a.id).length&&!koeb(p.id,a.id).length) : [];
@@ -489,7 +501,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
           el("div",{class:"card",style:"margin-top:0"}, ...vist.map(a=>el("div",{class:"sektion"},
             el("h3",null,a.navn),
             ...gaver(pid,a.id).map(g=>el("button",{type:"button",class:"gaverad",onclick:()=>gaveArk(g,{fraPerson:true})},
-              el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"), [oensket(g)>1? oensket(g)+" stk":null, g.butik, g.note].filter(Boolean).length? el("span",{class:"muted"},[oensket(g)>1? oensket(g)+" stk":null, g.butik, g.note].filter(Boolean).join(" · ")) : null),
+              el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"), [oensket(g)>1? oensket(g)+" stk":null, butikVis(g.butik), g.note].filter(Boolean).length? el("span",{class:"muted"},[oensket(g)>1? oensket(g)+" stk":null, butikVis(g.butik), g.note].filter(Boolean).join(" · ")) : null),
               el("div",{class:"tal"}, g.pris? kr(g.pris) : ""))),
             el("button",{type:"button",class:"btn small",onclick:()=>gaveArk(null,{personId:pid,anlId:a.id,fraPerson:true})},"+ Ønske"))),
             anl.filter(a=>!vist.includes(a)&&!udloebet(a)).length? el("label",{class:"f"},"Ønske til en anden anledning",
@@ -513,7 +525,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
           ...gs.map(g=>{ const ks=koebTil(g.id); const hvem=[...new Set(ks.map(koeberNavn))];
             return el("button",{type:"button",class:"gaverad",onclick:()=>gaveArk(g,{fraPerson:true})},
               el("div",{class:"t"}, el("b",null,g.tekst||"(uden navn)"),
-                hvem.length? el("span",{class:"muted"},"Købt af "+ogListe(hvem)) : (g.butik||g.note)? el("span",{class:"muted"},[g.butik,g.note].filter(Boolean).join(" · ")) : null,
+                hvem.length? el("span",{class:"muted"},"Købt af "+ogListe(hvem)) : (g.butik||g.note)? el("span",{class:"muted"},[butikVis(g.butik),g.note].filter(Boolean).join(" · ")) : null,
                 g.oprettetAf && g.oprettetAf===p.brugerId? el("span",{class:"muted"},"🎯 Ønsket af "+p.navn) : null),
               el("div",{class:"tal"}, ks.length? kr(sumPris(ks)) : (g.pris? kr(g.pris) : ""), gaveStatus(g))); }),
           el("div",{class:"row"},
@@ -752,6 +764,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
         el("div",{class:"row"},felt("Antal gaver",antal),felt("Pris pr. stk (kr)",pris)),
         koebBoks,
         felt("Hvor (butik / link)",butik),
+        g&&erLink(g.butik)? el("a",{class:"btn",href:linkURL(g.butik),target:"_blank",rel:"noopener",style:"display:flex;align-items:center;justify-content:center;text-decoration:none;color:inherit;box-sizing:border-box"},"Åbn "+butikVis(g.butik)) : null,
         felt("Note",note),
         g&&!mit? el("div",{class:"card",style:"margin-top:0"},
           el("div",{class:"sekhead"},el("h3",null,"Købt"),gaveStatus(g)),
