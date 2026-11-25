@@ -174,7 +174,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.8.3";
+  const VERSION = "0.8.4";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -240,6 +240,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const aktive = () => anledninger().filter(a=>!udloebet(a));
   // budget for en hel anledning – kun du kan se dit eget
   const anlBudRec = aid => levende("abud").find(b=>b.anlId===aid && (b.bruger===migId() || !b.bruger));
+  setTimeout(()=>{ for(const b of levende("abud")) if(!b.bruger||b.bruger===migId()) del(b.id); },4000);
   const anlBudget = aid => { const b=anlBudRec(aid); return b? Number(b.beloeb)||0 : 0; };
   function saetAnlBudget(aid,v){
     const b=anlBudRec(aid);
@@ -365,8 +366,6 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       el("div",{class:"sekhead"}, el("div",null, el("h2",null,a.navn), a.dato? el("div",{class:"muted"},datoTekst(a.dato)) : null, a.udloeber&&!udloebet(a)? el("div",{class:"muted"},"Udløber "+datoTekst(a.udloeber)) : null),
         el("button",{type:"button",class:"btn small",onclick:()=>anlArk(a)},"Ret")),
       el("div",null, el("div",{class:"muted"},"Du har brugt"), el("div",{class:"big"},kr(brugt)),
-        anlBudget(a.id)? el("div",{class:"muted"},"Dit budget for "+a.navn+": "+kr(brugt)+" af "+kr(anlBudget(a.id))+(brugt>anlBudget(a.id)?" – "+kr(brugt-anlBudget(a.id))+" over":" – "+kr(anlBudget(a.id)-brugt)+" tilbage")) : null,
-        anlBudget(a.id)? el("div",{class:"bar"+(brugt>anlBudget(a.id)?" over":""),style:"margin:6px 0 8px"}, el("i",{style:"width:"+Math.min(100,brugt/anlBudget(a.id)*100).toFixed(1)+"%"})) : null,
         budgetTotal? el("div",{class:"muted"},"Budget: "+kr(budgetBrugt)+" af "+kr(budgetTotal)+(over?" – "+kr(budgetBrugt-budgetTotal)+" over":" – "+kr(budgetTotal-budgetBrugt)+" tilbage")+(mb.some(p=>(budgetInfo(p.id,a.id)||{}).delt)?" (fælles budgetter tæller alles køb)":"")) : null),
       budgetTotal? el("div",{class:"bar"+(over?" over":"")}, el("i",{style:"width:"+Math.min(100,budgetBrugt/budgetTotal*100).toFixed(1)+"%"})) : null,
       el("div",{class:"stats"},
@@ -906,15 +905,17 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     const ps=personer().filter(p=>!erMig(p.id));
     if(budPerson && !ps.some(p=>p.id===budPerson)) budPerson="";
     const vaelg=el("select",{onchange:e=>{ budPerson=e.target.value; budUdkast={}; if(aabentArk) aabentArk(); }},
-      el("option",{value:""},"Samlet budget for hver anledning"), ...ps.map(p=>el("option",{value:p.id},p.navn)));
+      el("option",{value:""},"Overblik – alle personer"), ...ps.map(p=>el("option",{value:p.id},p.navn)));
     vaelg.value=budPerson;
     const ud=[felt("Budget for",vaelg)];
     if(!aktive().length){ ud.push(el("div",{class:"empty"},"Der er ingen aktive anledninger.")); return ud; }
     if(!budPerson){
-      ud.push(el("div",{class:"muted"},"Hvor meget vil du bruge i alt på hver anledning? Kun du kan se dit budget. Vælg en person ovenfor for at give hver person sit eget budget. Når en anledning er overstået og ligger i 📦 Arkiv, forsvinder den herfra."));
-      for(const a of aktive()){ const b=anlBudget(a.id), brugtA=sumPris(mineKoeb(koeb(null,a.id)));
-        const sum=ps.reduce((t,p)=>t+budget(p.id,a.id),0);
-        ud.push(budRaekke(a.navn, restTekst(brugtA,b)+(sum? " · personer i alt "+kr(sum) : ""), budInput(a.id,b,"Intet budget",v=>{ saetAnlBudget(a.id,v); toast(v? "Budget for "+a.navn+": "+kr(v) : "Budget for "+a.navn+" er fjernet"); }))); }
+      ud.push(el("div",{class:"muted"},"Overblik over budgetterne til personerne pr. anledning. Vælg en person ovenfor for at sætte deres budget. Når en anledning er overstået og ligger i 📦 Arkiv, forsvinder den herfra."));
+      for(const a of aktive()){ const mb=ps.filter(p=>budget(p.id,a.id)>0);
+        const tot=mb.reduce((t,p)=>t+budget(p.id,a.id),0), brugt=mb.reduce((t,p)=>t+brugtMod(p.id,a.id),0);
+        ud.push(el("div",{class:"item",style:"cursor:default;align-items:center"},
+          el("div",{class:"txt"},el("span",{class:"navn"},a.navn), el("span",{class:"muted"}, tot? restTekst(brugt,tot)+" · "+mb.length+(mb.length===1?" person":" personer") : "Ingen budgetter endnu")),
+          el("div",{class:"tal",style:"font-weight:650;white-space:nowrap"}, tot? kr(tot) : "–"))); }
       return ud;
     }
     const pid=budPerson, pn=personNavn(pid), fb=fastBudget(pid), fr=fastBudgetRec(pid);
@@ -957,7 +958,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       ["Tilføj en gave","med + Gave. Skriv antal, hvis der ønskes flere stk. Vælg \"Jeg har købt den\" hvis den allerede er købt."],
       ["Køb ind","under 🛍️ Indkøb står alle idéer og ønsker, der mangler at blive købt. Tryk Købt ✓. Ønskes der 3 stk og er der købt 1, bliver den stående med \"2 mangler\"."],
       ["Budget","Oversigten viser hvad du har brugt, og hvad alle har brugt. En person bliver rød, hvis du er over dit budget."],
-      ["Budget","under ⚙️ → 💰 Budget: skriv hvor meget du vil bruge i alt på hver anledning, fx Jul 2026. Vælg en person øverst for at give netop den person et fast budget eller et beløb pr. anledning."],
+      ["Budget","under ⚙️ → 💰 Budget: vælg en person øverst og giv dem et fast budget eller et beløb pr. anledning. Uden en valgt person ser du, hvad budgetterne giver i alt pr. anledning."],
       ["Del budget","fx med den anden forælder: tryk på personen → Ret person (eller på budgettet for én anledning) og vælg under \"Del budgettet med\". Den anden får et kort øverst på oversigten og skal trykke Godkend – indtil da står der ⏳ Venter. Bagefter kan I begge se og rette beløbet, jeres køb tæller sammen mod budgettet, og gaverne står som \"Købt af\" jer begge. Tryk Afvis for at sige nej tak."],
       ["Kigger nogen med?","tryk på personen → 🙈 Skjul. Det gælder kun på denne telefon."]
     ];
