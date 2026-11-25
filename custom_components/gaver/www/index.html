@@ -169,7 +169,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.6";
+  const VERSION = "0.7.7";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -658,7 +658,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
         top(g? (mit?"Dit ønske":"Gave") : "Ny gave", g&&!mit? personNavn(g.personId)+" · "+anlNavn(g.anlId) : null),
         el("div",{class:"row"},felt("Til",pSel),felt("Anledning",aSel)),
         felt("Gave",tekst),
-        el("div",{class:"row"},felt("Antal ønsket",antal),felt("Pris pr. stk (kr)",pris)),
+        el("div",{class:"row"},felt("Antal gaver",antal),felt("Pris pr. stk (kr)",pris)),
         koebBoks,
         felt("Hvor (butik / link)",butik),
         felt("Note",note),
