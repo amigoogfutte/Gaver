@@ -78,6 +78,11 @@ details.fold[open]>summary::after{transform:rotate(90deg)}
 details.fold>.foldInd{display:flex;flex-direction:column;gap:12px;margin-top:28px}
 .sektion{border-top:1px solid var(--soft);padding-top:12px;display:flex;flex-direction:column;gap:8px}
 .sektion:first-of-type{border-top:none;padding-top:0}
+.kvitter{display:flex;flex-wrap:wrap;gap:8px}
+.kvit{width:84px;height:84px;border-radius:10px;background:var(--bg);border:1px solid var(--soft);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;padding:0;font-size:30px;flex-direction:column;color:var(--muted)}
+.kvit img{width:100%;height:100%;object-fit:cover}
+.kvit small{font-size:11px;margin-top:2px}
+.kvitstor{width:100%;border-radius:12px;background:#fff;display:block}
 .sekhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .gaverad{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:12px;cursor:pointer;border:none;width:100%;text-align:left}
 .gaverad .t{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -169,7 +174,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.7.7";
+  const VERSION = "0.8.1";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -233,11 +238,20 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   // En anledning er udløbet dagen efter sin udløbsdato. Så flytter den i arkivet.
   const udloebet = a => !!(a && a.udloeber && a.udloeber < idag());
   const aktive = () => anledninger().filter(a=>!udloebet(a));
+  // budget for en hel anledning – kun du kan se dit eget
+  const anlBudRec = aid => levende("abud").find(b=>b.anlId===aid && (b.bruger===migId() || !b.bruger));
+  const anlBudget = aid => { const b=anlBudRec(aid); return b? Number(b.beloeb)||0 : 0; };
+  function saetAnlBudget(aid,v){
+    const b=anlBudRec(aid);
+    if(v>0) put(b? b.id : "abud-"+(migId()||"lokal")+"-"+aid, Object.assign({},b||{},{kind:"abud",anlId:aid,beloeb:v,bruger:migId()}));
+    else if(b) del(b.id);
+  }
   let visTidligere=false;
   const anledninger = () => levende("anl").sort((a,b)=>(a.aar-b.aar)||((TYPEORD[a.type]??9)-(TYPEORD[b.type]??9))||String(a.dato||"").localeCompare(String(b.dato||""))||a.navn.localeCompare(b.navn,"da"));
   const gaver = (pid,aid) => levende("gave").filter(g=>(pid? g.personId===pid : synlig(g.personId))&&(!aid||g.anlId===aid)).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const koeb = (pid,aid) => levende("koeb").filter(k=>(pid? k.personId===pid : synlig(k.personId))&&(!aid||k.anlId===aid));
   const koebTil = gid => levende("koeb").filter(k=>k.gaveId===gid).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
+  const kvitTil = gid => levende("kvit").filter(k=>k.gaveId===gid).sort((a,b)=>(a.oprettet||0)-(b.oprettet||0));
   const mineKoeb = ks => ks.filter(k=>k.koebtAf===migId());
   const sumPris = ks => ks.reduce((s,k)=>s+(Number(k.pris)||0),0);
   const oensket = g => Math.max(1, Number(g.antal)||1);
@@ -351,6 +365,8 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       el("div",{class:"sekhead"}, el("div",null, el("h2",null,a.navn), a.dato? el("div",{class:"muted"},datoTekst(a.dato)) : null, a.udloeber&&!udloebet(a)? el("div",{class:"muted"},"Udløber "+datoTekst(a.udloeber)) : null),
         el("button",{type:"button",class:"btn small",onclick:()=>anlArk(a)},"Ret")),
       el("div",null, el("div",{class:"muted"},"Du har brugt"), el("div",{class:"big"},kr(brugt)),
+        anlBudget(a.id)? el("div",{class:"muted"},"Dit budget for "+a.navn+": "+kr(brugt)+" af "+kr(anlBudget(a.id))+(brugt>anlBudget(a.id)?" – "+kr(brugt-anlBudget(a.id))+" over":" – "+kr(anlBudget(a.id)-brugt)+" tilbage")) : null,
+        anlBudget(a.id)? el("div",{class:"bar"+(brugt>anlBudget(a.id)?" over":""),style:"margin:6px 0 8px"}, el("i",{style:"width:"+Math.min(100,brugt/anlBudget(a.id)*100).toFixed(1)+"%"})) : null,
         budgetTotal? el("div",{class:"muted"},"Budget: "+kr(budgetBrugt)+" af "+kr(budgetTotal)+(over?" – "+kr(budgetBrugt-budgetTotal)+" over":" – "+kr(budgetTotal-budgetBrugt)+" tilbage")+(mb.some(p=>(budgetInfo(p.id,a.id)||{}).delt)?" (fælles budgetter tæller alles køb)":"")) : null),
       budgetTotal? el("div",{class:"bar"+(over?" over":"")}, el("i",{style:"width:"+Math.min(100,budgetBrugt/budgetTotal*100).toFixed(1)+"%"})) : null,
       el("div",{class:"stats"},
@@ -620,6 +636,67 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   }
 
   // --- opret/ret gave (idé / ønske) ---
+  // ---- kvitteringer: billede (kamera/foto) eller PDF, gemt på serveren og skjult for den gaven er til ----
+  const kvitURL=new Map();
+  async function kvitBlobURL(k){
+    if(kvitURL.has(k.id)) return kvitURL.get(k.id);
+    const r=await api("/api/gaver/fil/"+encodeURIComponent(k.id)); if(!r.ok) throw new Error(r.status);
+    const u=URL.createObjectURL(await r.blob()); kvitURL.set(k.id,u); return u;
+  }
+  function komprimer(fil){
+    return new Promise(ok=>{
+      if(!fil.type.startsWith("image/") || fil.type==="image/gif"){ ok(fil); return; }
+      const u=URL.createObjectURL(fil), img=new Image();
+      img.onload=()=>{ const max=1800, f=Math.min(1, max/Math.max(img.naturalWidth,img.naturalHeight));
+        const c=document.createElement("canvas"); c.width=Math.round(img.naturalWidth*f); c.height=Math.round(img.naturalHeight*f);
+        const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(u);
+        c.toBlob(b=>ok(b||fil),"image/jpeg",0.82); };
+      img.onerror=()=>{ URL.revokeObjectURL(u); ok(fil); };
+      img.src=u;
+    });
+  }
+  async function lagKvit(g, fil, efter){
+    if(!fil) return;
+    if(!HA){ toast("Kvitteringer gemmes på serveren – åbn appen via Home Assistant"); return; }
+    if(!navigator.onLine){ toast("Kvitteringer kræver forbindelse – prøv igen, når du er online"); return; }
+    const pdf=fil.type==="application/pdf"||/\.pdf$/i.test(fil.name||"");
+    if(!pdf && !(fil.type||"").startsWith("image/") && fil.type){ toast("Vælg et billede eller en PDF"); return; }
+    toast("Gemmer kvittering …");
+    try{
+      if(db.dirty.includes(g.id)){ await sync(); }
+      const data=pdf? fil : await komprimer(fil);
+      const typ=pdf? "application/pdf" : (["image/jpeg","image/png","image/webp"].includes(data.type)? data.type : "image/jpeg");
+      if(data.size>10*1024*1024){ toast("Filen er for stor (højst 10 MB)"); return; }
+      const id=newId("kv");
+      const r=await api("/api/gaver/fil/"+id+"?gave="+encodeURIComponent(g.id),{method:"POST",headers:{"Content-Type":typ},body:data});
+      if(!r.ok){ let m="Kvitteringen kunne ikke gemmes"; try{ m=(await r.json()).message||m; }catch(e){} toast(m); return; }
+      kvitURL.set(id, URL.createObjectURL(data));
+      const gg=rec(g.id)||g;
+      put(id,{kind:"kvit",gaveId:gg.id,personId:gg.personId,anlId:gg.anlId,type:typ,navn:pdf?(fil.name||"Kvittering.pdf"):"",oprettetAf:migId(),oprettetNavn:mig?mig.navn:"",oprettet:Date.now()});
+      toast("Kvitteringen er gemt"); efter&&efter();
+    }catch(e){ toast(e&&e.login? "Log ind igen for at gemme kvitteringer" : "Kvitteringen kunne ikke gemmes – prøv igen"); }
+  }
+  function kvitKnap(k, aabn){
+    const pdf=k.type==="application/pdf";
+    const b=el("button",{type:"button",class:"kvit",title:pdf?(k.navn||"PDF"):"Kvittering",onclick:aabn}, pdf? ["📄",el("small",null,"PDF")] : "🧾");
+    if(!pdf) kvitBlobURL(k).then(u=>b.replaceChildren(el("img",{src:u,alt:"Kvittering"}))).catch(()=>{});
+    return b;
+  }
+  function kvitArk(g, k){
+    const pdf=k.type==="application/pdf";
+    const indhold=el("div",{class:"muted"},"Henter …");
+    let url=null;
+    kvitBlobURL(k).then(u=>{ url=u; indhold.replaceWith(pdf? el("div",{class:"empty"},"📄 "+(k.navn||"PDF")) : el("img",{class:"kvitstor",src:u,alt:"Kvittering"})); })
+      .catch(()=>{ indhold.textContent="Kvitteringen kan ikke hentes lige nu – prøv igen, når der er forbindelse."; });
+    const egen=k.oprettetAf===migId()||erAdmin();
+    visArk(()=>[
+      top("Kvittering",(g.tekst||"")+" · "+personNavn(g.personId)+(k.oprettetNavn? " · lagt ind af "+k.oprettetNavn : "")),
+      indhold,
+      el("button",{type:"button",class:"btn primary",onclick:async()=>{ try{ const u=url||await kvitBlobURL(k); const a=el("a",{href:u,download:pdf?(k.navn||"kvittering.pdf"):"kvittering-"+(g.tekst||"gave").replace(/[^\wæøåÆØÅ -]/g,"")+".jpg",target:"_blank",rel:"noopener"}); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ toast("Kan ikke hentes lige nu"); } }},pdf?"Åbn PDF":"Gem / åbn billede"),
+      egen? el("button",{type:"button",class:"btn danger",onclick:()=>{ if(!confirm("Slet kvitteringen?")) return; del(k.id); toast("Kvitteringen er slettet"); gaveArk(rec(g.id)||g); }},"Slet kvittering") : null,
+      el("button",{type:"button",class:"btn",onclick:()=>gaveArk(rec(g.id)||g)},"Tilbage")
+    ].filter(Boolean));
+  }
   function gaveArk(g, std){
     std=std||{};
     const ps=personer(), anl=anledninger().filter(a=>!udloebet(a) || (g&&g.anlId===a.id) || std.anlId===a.id);
@@ -645,7 +722,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       if(!tekst.value.trim()){ toast("Skriv hvad gaven er"); tekst.focus(); return; }
       const id=g?g.id:newId("g"); const n=heltal(antal.value,1), pr=tal(pris.value);
       put(id,Object.assign({},g||{},{kind:"gave",personId:pSel.value,anlId:aSel.value,tekst:tekst.value.trim(),antal:n,pris:pr,butik:butik.value.trim(),note:note.value.trim(),oprettet:g?g.oprettet:Date.now()}));
-      for(const k of (g? koebTil(g.id):[])) if(k.personId!==pSel.value||k.anlId!==aSel.value) put(k.id,Object.assign({},k,{personId:pSel.value,anlId:aSel.value}));
+      for(const k of (g? [...koebTil(g.id),...kvitTil(g.id)]:[])) if(k.personId!==pSel.value||k.anlId!==aSel.value) put(k.id,Object.assign({},k,{personId:pSel.value,anlId:aSel.value}));
       if(!g && !tilMig() && koebtNu.vaerdi()==="koebt"){ put(newId("k"),Object.assign({kind:"koeb",gaveId:id,personId:pSel.value,anlId:aSel.value,antal:n,pris:pr*n,status:"koebt",koebtAf:migId(),koebtNavn:mig?mig.navn:"",oprettet:Date.now()}, fraGruppe(pSel.value,aSel.value)||{})); }
       toast(g?"Gemt":(tilMig()?"Ønsket er tilføjet":"Gaven er tilføjet"));
       if(igen) gaveArk(null,{personId:pSel.value,anlId:aSel.value,fraPerson:std.fraPerson}); else tilbage(pSel.value);
@@ -668,10 +745,21 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
             el("div",{class:"t"},el("b",null,(Number(k.antal)||1)+" stk · købt af "+koeberNavn(k)), el("span",{class:"muted"},KSTATUS[k.status]||"Købt")),
             el("div",{class:"tal"},kr(k.pris)))) : [el("div",{class:"empty"},"Ingen har købt den endnu.")]),
           mangler(g)>0? el("button",{type:"button",class:"btn ok",onclick:()=>koebArk(g,null)},"🛒 Jeg har købt "+(oensket(g)>1? "nogle af dem":"den")) : null) : null,
+        g&&!mit? (()=>{ const kv=kvitTil(g.id); const gen=()=>$("ark").replaceChildren(...tegn());
+          const kamera=el("input",{type:"file",accept:"image/*",capture:"environment",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
+          const vaelg=el("input",{type:"file",accept:"image/*,application/pdf",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
+          return el("div",{class:"card",style:"margin-top:0"},
+            el("div",{class:"sekhead"},el("h3",null,"🧾 Kvittering"),kv.length? el("span",{class:"muted"},kv.length+" stk") : null),
+            kv.length? el("div",{class:"kvitter"},...kv.map(k=>kvitKnap(k,()=>kvitArk(g,k)))) : el("div",{class:"muted"},"Kvitteringer kan ikke ses af "+personNavn(g.personId)+"."),
+            el("div",{class:"row",style:"display:flex;gap:8px"},
+              el("button",{type:"button",class:"btn",style:"flex:1",onclick:()=>kamera.click()},"📷 Tag billede"),
+              el("button",{type:"button",class:"btn",style:"flex:1",onclick:()=>vaelg.click()},"📁 Hent fil")),
+            kamera, vaelg); })() : null,
         el("button",{type:"button",class:"btn primary",onclick:()=>gem(false)},"Gem"),
         g? null : el("button",{type:"button",class:"btn",onclick:()=>gem(true)},"Gem og tilføj en til"),
         g&&(!andresKoeb||erAdmin())? el("button",{type:"button",class:"btn danger",onclick:()=>{
-          const kopi=[g,...ks].map(r=>Object.assign({},r)); for(const k of ks) del(k.id); del(g.id); tilbage(g.personId);
+          const kv=kvitTil(g.id); if(kv.length && !confirm("Gaven har "+kv.length+" kvittering"+(kv.length>1?"er":"")+". Slet dem også?")) return;
+          const kopi=[g,...ks].map(r=>Object.assign({},r)); for(const k of ks) del(k.id); for(const k of kv) del(k.id); del(g.id); tilbage(g.personId);
           toast(mit?"Ønsket er slettet":"Gaven er slettet",()=>kopi.forEach(gendan)); }},mit?"Slet ønske":"Slet gave") : null
       ].filter(Boolean);
     };
@@ -788,7 +876,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     return linjer.join("\n");
   }
   // Afsnittene under ⚙️ er foldet sammen, hver gang tandhjulet åbnes. Kun ét afsnit kan være åbent ad gangen – åbner man et, lukker de andre.
-  let indstAabne=new Set();
+  let indstAabne=new Set(), budUdkast={};
   function fold(noegle,titel,...ind){
     return el("details",{class:"card fold",open:indstAabne.has(noegle),ontoggle:e=>{ const d=e.target; if(d.open){ indstAabne=new Set([noegle]); $("ark").querySelectorAll("details.fold[open]").forEach(x=>{ if(x!==d) x.open=false; }); } else indstAabne.delete(noegle); }},
       el("summary",null,el("h2",null,titel)), el("div",{class:"foldInd"},...ind));
@@ -806,7 +894,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const startLink=()=>{ const o=!erLokal(location.hostname)? location.origin : (eksternAdr||location.origin); return o+"/gaver-start"; };
   const linkErLokal=()=>{ try{ return erLokal(new URL(startLink()).hostname); }catch(e){ return false; } };
   function indstArk(){
-    indstAabne=new Set();
+    indstAabne=new Set(); budUdkast={};
     hentEksternAdr();
     const trin=[
       ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det, medmindre du deler det)."],
@@ -815,6 +903,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       ["Tilføj en gave","med + Gave. Skriv antal, hvis der ønskes flere stk. Vælg \"Jeg har købt den\" hvis den allerede er købt."],
       ["Køb ind","under 🛍️ Indkøb står alle idéer og ønsker, der mangler at blive købt. Tryk Købt ✓. Ønskes der 3 stk og er der købt 1, bliver den stående med \"2 mangler\"."],
       ["Budget","Oversigten viser hvad du har brugt, og hvad alle har brugt. En person bliver rød, hvis du er over dit budget."],
+      ["Budget for en hel anledning","under ⚙️ → 💰 Budget: skriv hvor meget du vil bruge i alt, fx på Jul 2026. Oversigten viser så, hvor meget du har tilbage."],
       ["Del budget","fx med den anden forælder: tryk på personen → Ret person (eller på budgettet for én anledning) og vælg under \"Del budgettet med\". Den anden får et kort øverst på oversigten og skal trykke Godkend – indtil da står der ⏳ Venter. Bagefter kan I begge se og rette beløbet, jeres køb tæller sammen mod budgettet, og gaverne står som \"Købt af\" jer begge. Tryk Afvis for at sige nej tak."],
       ["Kigger nogen med?","tryk på personen → 🙈 Skjul. Det gælder kun på denne telefon."]
     ];
@@ -823,6 +912,16 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       fold("hvem","✋ Hvem er du?",
         mine.length? el("div",null,"Du er ",el("b",null,mine.map(p=>p.navn).join(", ")),". Du kan ikke se, hvad der er købt til dig.") : el("div",{class:"muted"},"Du har ikke valgt dit navn. Du kan kun vælge én gang."),
         mine.length? null : el("button",{type:"button",class:"btn",onclick:hvemArk},"Vælg mit navn")),
+      fold("budget","💰 Budget",
+        el("div",{class:"muted"},"Hvor meget vil du bruge i alt på hver anledning? Kun du kan se dit budget. Når en anledning er overstået og ligger i 📦 Arkiv, forsvinder den herfra."),
+        ...(aktive().length? aktive().map(a=>{ const brugtA=sumPris(mineKoeb(koeb(null,a.id))), b=anlBudget(a.id);
+          const inp=el("input",{type:"text",inputmode:"decimal",placeholder:"Intet budget",value:(a.id in budUdkast)? budUdkast[a.id] : (b? String(b).replace(".",",") : ""),style:"max-width:130px;text-align:right",
+            oninput:e=>{ budUdkast[a.id]=e.target.value; },
+            onchange:e=>{ const v=tal(e.target.value); delete budUdkast[a.id]; if(v===anlBudget(a.id)) return; saetAnlBudget(a.id,v); toast(v? "Budget for "+a.navn+": "+kr(v) : "Budget for "+a.navn+" er fjernet"); }});
+          return el("div",{class:"item",style:"cursor:default;align-items:center"},
+            el("div",{class:"txt"},el("span",{class:"navn"},a.navn), el("span",{class:"muted"},"Brugt "+kr(brugtA)+(b? (brugtA>b? " · "+kr(brugtA-b)+" over" : " · "+kr(b-brugtA)+" tilbage") : ""))),
+            el("div",{style:"display:flex;align-items:center;gap:6px"},inp,el("span",{class:"muted"},"kr"))); })
+          : [el("div",{class:"empty"},"Der er ingen aktive anledninger.")])),
       erAdmin()? adminKort() : null,
       fold("del","🔗 Del",
         el("div",{style:"font-size:14px;word-break:break-all;user-select:all;-webkit-user-select:all"},link),

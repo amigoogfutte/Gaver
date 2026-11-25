@@ -21,7 +21,7 @@ from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import APP_URL, DOMAIN, MAX_BODY_BYTES, MAX_RECORD_BYTES, PANEL_URL_PATH, STORAGE_DIR
+from .const import APP_URL, DOMAIN, MAX_BODY_BYTES, MAX_FIL_BYTES, MAX_RECORD_BYTES, PANEL_URL_PATH, STORAGE_DIR
 
 _LOGGER = logging.getLogger(__name__)
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{3,160}$")
@@ -133,6 +133,60 @@ class Store:
             return {r["brugerId"]: r.get("navn", "") for r in self._laes().values()
                     if r.get("kind") == "person" and not r.get("deleted") and r.get("brugerId")}
 
+    # ---- kvitteringer (billeder/PDF) i /config/gaver/filer ----
+    FILTYPER = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
+
+    def _fil_sti(self, fid: str) -> Path | None:
+        d = self.root / "filer"
+        for ext in self.FILTYPER.values():
+            f = d / f"{fid}{ext}"
+            if f.exists():
+                return f
+        return None
+
+    def _slet_fil(self, fid: str) -> None:
+        f = self._fil_sti(fid)
+        if f:
+            f.unlink(missing_ok=True)
+        (self.root / "filer" / f"{fid}.json").unlink(missing_ok=True)
+
+    def gem_fil(self, uid: str, fid: str, gave_id: str, typ: str, indhold: bytes) -> str | None:
+        """Gem en kvittering til en gave. Returnerer en fejltekst eller None."""
+        with self._laas:
+            data = self._laes()
+            g = data.get(gave_id)
+            if not g or g.get("deleted") or g.get("kind") != "gave":
+                return "Gaven findes ikke – vent til den er synkroniseret"
+            if g.get("personId") in self._mine(data, uid):
+                return "Du kan ikke lægge kvitteringer på dine egne gaver"
+            cur = data.get(fid)
+            if cur is not None and (cur.get("deleted") or cur.get("oprettetAf") != uid):
+                return "Findes allerede"
+            d = self.root / "filer"
+            d.mkdir(parents=True, exist_ok=True)
+            self._slet_fil(fid)
+            (d / f"{fid}{self.FILTYPER[typ]}").write_bytes(indhold)
+            (d / f"{fid}.json").write_text(json.dumps({"personId": g.get("personId"), "bruger": uid, "type": typ}), encoding="utf-8")
+        return None
+
+    def hent_fil(self, uid: str, fid: str) -> tuple[bytes, str] | None:
+        with self._laas:
+            data = self._laes()
+            f = self._fil_sti(fid)
+            if not f:
+                return None
+            r = data.get(fid)
+            try:
+                meta = json.loads((self.root / "filer" / f"{fid}.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                meta = {}
+            if r is not None:
+                if r.get("deleted") or self._skjult(r, self._mine(data, uid), uid):
+                    return None
+            elif meta.get("bruger") != uid:
+                return None  # endnu ikke synkroniseret: kun den der lagde den ind
+            return f.read_bytes(), meta.get("type") or "application/octet-stream"
+
     def _laes(self) -> dict[str, dict]:
         f = self.root / FAELLES
         if not f.exists():
@@ -164,8 +218,10 @@ class Store:
             if r.get("personId") in mine:
                 return True
             return r.get("bruger") != uid and uid not in (r.get("deltMed") or []) and uid not in (r.get("inviteret") or [])
+        if k == "abud":
+            return r.get("bruger") != uid  # budget for en hel anledning er personligt
         if r.get("personId") in mine:
-            if k == "koeb":
+            if k in ("koeb", "kvit"):
                 return True
             if k == "gave" and r.get("oprettetAf") != uid:
                 return True
@@ -211,6 +267,10 @@ class Store:
                 if r.get("deleted"):
                     if k in ("person", "anl") and not admin:
                         continue
+                    if k == "kvit":
+                        if cur is not None and cur.get("oprettetAf") != uid and not admin:
+                            continue
+                        self._slet_fil(rid)
                     if k == "koeb" and cur is not None and cur.get("koebtAf") != uid and uid not in (cur.get("fraGruppe") or []) and not admin:
                         continue
                 elif k == "person":
@@ -227,6 +287,12 @@ class Store:
                     elif cur is not None and cur.get("brugerNavn"):
                         r["brugerNavn"] = cur["brugerNavn"]
                 elif k == "gave":
+                    r["oprettetAf"] = cur.get("oprettetAf", uid) if cur else uid
+                elif k == "abud":
+                    r["bruger"] = cur.get("bruger", uid) if cur else uid
+                elif k == "kvit":
+                    if cur is not None and cur.get("oprettetAf") != uid and not admin:
+                        continue
                     r["oprettetAf"] = cur.get("oprettetAf", uid) if cur else uid
                 elif k == "koeb":
                     if cur is not None and cur.get("koebtAf") != uid and uid not in (cur.get("fraGruppe") or []) and not admin:
@@ -365,6 +431,42 @@ class BrugereView(HomeAssistantView):
         return self.json({"ok": True})
 
 
+class FilView(HomeAssistantView):
+    """POST /api/gaver/fil/<id>?gave=<gaveId> (rå billede/PDF), GET /api/gaver/fil/<id>."""
+
+    url = "/api/gaver/fil/{fid}"
+    name = "api:gaver:fil"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant, store: Store) -> None:
+        self.hass = hass
+        self.store = store
+
+    async def get(self, request: web.Request, fid: str) -> web.Response:
+        if not _ID_RE.match(fid):
+            return self.json_message("Ugyldig", 400)
+        res = await self.hass.async_add_executor_job(self.store.hent_fil, request["hass_user"].id, fid)
+        if not res:
+            return self.json_message("Findes ikke", 404)
+        indhold, typ = res
+        return web.Response(body=indhold, content_type=typ, headers={"Cache-Control": "private, max-age=86400"})
+
+    async def post(self, request: web.Request, fid: str) -> web.Response:
+        gave_id = request.query.get("gave", "")
+        typ = (request.content_type or "").lower()
+        if not _ID_RE.match(fid) or not _ID_RE.match(gave_id):
+            return self.json_message("Ugyldig", 400)
+        if typ not in Store.FILTYPER:
+            return self.json_message("Kun billeder og PDF", 415)
+        indhold = await request.read()
+        if not indhold or len(indhold) > MAX_FIL_BYTES:
+            return self.json_message("Filen er for stor (højst 10 MB)", 413)
+        fejl = await self.hass.async_add_executor_job(self.store.gem_fil, request["hass_user"].id, fid, gave_id, typ, indhold)
+        if fejl:
+            return self.json_message(fejl, 400)
+        return self.json({"ok": True})
+
+
 class LinkView(HomeAssistantView):
     """Home Assistants adresse udefra (egen ekstern adresse eller Nabu Casa), til del-linket."""
 
@@ -405,7 +507,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not data.get("http_registered"):
         # HTTP-ruter kan ikke fjernes igen, så de registreres kun én gang pr. opstart.
         await hass.http.async_register_static_paths([StaticPathConfig(APP_URL, str(WWW), False)])
-        for view in (SyncView(hass, store), MigView(hass, store), BrugereView(hass, store), LinkView(hass), AppRedirectView()):
+        for view in (SyncView(hass, store), MigView(hass, store), BrugereView(hass, store), LinkView(hass), FilView(hass, store), AppRedirectView()):
             hass.http.register_view(view)
         data["http_registered"] = True
 
