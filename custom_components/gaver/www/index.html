@@ -174,7 +174,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.8.1";
+  const VERSION = "0.8.2";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -682,6 +682,20 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     if(!pdf) kvitBlobURL(k).then(u=>b.replaceChildren(el("img",{src:u,alt:"Kvittering"}))).catch(()=>{});
     return b;
   }
+  // Send kvitteringer via telefonens del-menu (Mail, Beskeder/SMS …). Uden del-menu hentes filen i stedet.
+  const kvitFilnavn=(g,k,i)=> k.type==="application/pdf"? (k.navn||"kvittering.pdf") : "Kvittering "+(g.tekst||"gave").replace(/[^\wæøåÆØÅ -]/g,"").trim()+(i?" "+(i+1):"")+(k.type==="image/png"?".png":k.type==="image/webp"?".webp":".jpg");
+  async function sendKvit(g, ks){
+    let filer;
+    try{ filer=await Promise.all(ks.map(async(k,i)=>{ const u=await kvitBlobURL(k); const b=await (await fetch(u)).blob(); return new File([b],kvitFilnavn(g,k,ks.length>1?i:0),{type:k.type||b.type}); })); }
+    catch(e){ toast("Kvitteringen kan ikke hentes lige nu – prøv igen, når der er forbindelse"); return; }
+    const tekst="Kvittering: "+(g.tekst||"gave")+" til "+personNavn(g.personId)+" ("+anlNavn(g.anlId)+")";
+    if(navigator.share && navigator.canShare && navigator.canShare({files:filer})){
+      try{ await navigator.share({files:filer,title:tekst,text:tekst}); }catch(e){ if(e&&e.name!=="AbortError") toast("Kunne ikke dele kvitteringen"); }
+      return;
+    }
+    for(const f of filer){ const u=URL.createObjectURL(f); const a=el("a",{href:u,download:f.name}); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),30000); }
+    toast(filer.length>1? "Kvitteringerne er hentet – vedhæft dem i en mail" : "Kvitteringen er hentet – vedhæft den i en mail");
+  }
   function kvitArk(g, k){
     const pdf=k.type==="application/pdf";
     const indhold=el("div",{class:"muted"},"Henter …");
@@ -693,6 +707,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       top("Kvittering",(g.tekst||"")+" · "+personNavn(g.personId)+(k.oprettetNavn? " · lagt ind af "+k.oprettetNavn : "")),
       indhold,
       el("button",{type:"button",class:"btn primary",onclick:async()=>{ try{ const u=url||await kvitBlobURL(k); const a=el("a",{href:u,download:pdf?(k.navn||"kvittering.pdf"):"kvittering-"+(g.tekst||"gave").replace(/[^\wæøåÆØÅ -]/g,"")+".jpg",target:"_blank",rel:"noopener"}); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ toast("Kan ikke hentes lige nu"); } }},pdf?"Åbn PDF":"Gem / åbn billede"),
+      el("button",{type:"button",class:"btn ok",onclick:()=>sendKvit(g,[k])},"✉️ Send på mail / SMS"),
       egen? el("button",{type:"button",class:"btn danger",onclick:()=>{ if(!confirm("Slet kvitteringen?")) return; del(k.id); toast("Kvitteringen er slettet"); gaveArk(rec(g.id)||g); }},"Slet kvittering") : null,
       el("button",{type:"button",class:"btn",onclick:()=>gaveArk(rec(g.id)||g)},"Tilbage")
     ].filter(Boolean));
@@ -751,6 +766,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
           return el("div",{class:"card",style:"margin-top:0"},
             el("div",{class:"sekhead"},el("h3",null,"🧾 Kvittering"),kv.length? el("span",{class:"muted"},kv.length+" stk") : null),
             kv.length? el("div",{class:"kvitter"},...kv.map(k=>kvitKnap(k,()=>kvitArk(g,k)))) : el("div",{class:"muted"},"Kvitteringer kan ikke ses af "+personNavn(g.personId)+"."),
+            kv.length? el("button",{type:"button",class:"btn ok",onclick:()=>sendKvit(g,kv)},"✉️ Send "+(kv.length>1?"alle "+kv.length+" ":"")+"på mail / SMS") : null,
             el("div",{class:"row",style:"display:flex;gap:8px"},
               el("button",{type:"button",class:"btn",style:"flex:1",onclick:()=>kamera.click()},"📷 Tag billede"),
               el("button",{type:"button",class:"btn",style:"flex:1",onclick:()=>vaelg.click()},"📁 Hent fil")),
