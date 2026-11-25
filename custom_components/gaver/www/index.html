@@ -174,7 +174,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.8.2";
+  const VERSION = "0.8.3";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -892,7 +892,45 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     return linjer.join("\n");
   }
   // Afsnittene under ⚙️ er foldet sammen, hver gang tandhjulet åbnes. Kun ét afsnit kan være åbent ad gangen – åbner man et, lukker de andre.
-  let indstAabne=new Set(), budUdkast={};
+  let indstAabne=new Set(), budUdkast={}, budPerson="";
+  function budInput(noegle, vaerdi, pladsholder, gem){
+    return el("input",{type:"text",inputmode:"decimal",placeholder:pladsholder,value:(noegle in budUdkast)? budUdkast[noegle] : (vaerdi? String(vaerdi).replace(".",",") : ""),style:"max-width:130px;text-align:right",
+      oninput:e=>{ budUdkast[noegle]=e.target.value; },
+      onchange:e=>{ const v=tal(e.target.value); delete budUdkast[noegle]; if(v===vaerdi) return; gem(v); }});
+  }
+  const budRaekke=(navn,under,inp)=>el("div",{class:"item",style:"cursor:default;align-items:center"},
+    el("div",{class:"txt"},el("span",{class:"navn"},navn), under? el("span",{class:"muted"},under) : null),
+    el("div",{style:"display:flex;align-items:center;gap:6px"},inp,el("span",{class:"muted"},"kr")));
+  const restTekst=(brugt,b)=>"Brugt "+kr(brugt)+(b? (brugt>b? " · "+kr(brugt-b)+" over" : " · "+kr(b-brugt)+" tilbage") : "");
+  function budgetIndhold(){
+    const ps=personer().filter(p=>!erMig(p.id));
+    if(budPerson && !ps.some(p=>p.id===budPerson)) budPerson="";
+    const vaelg=el("select",{onchange:e=>{ budPerson=e.target.value; budUdkast={}; if(aabentArk) aabentArk(); }},
+      el("option",{value:""},"Samlet budget for hver anledning"), ...ps.map(p=>el("option",{value:p.id},p.navn)));
+    vaelg.value=budPerson;
+    const ud=[felt("Budget for",vaelg)];
+    if(!aktive().length){ ud.push(el("div",{class:"empty"},"Der er ingen aktive anledninger.")); return ud; }
+    if(!budPerson){
+      ud.push(el("div",{class:"muted"},"Hvor meget vil du bruge i alt på hver anledning? Kun du kan se dit budget. Vælg en person ovenfor for at give hver person sit eget budget. Når en anledning er overstået og ligger i 📦 Arkiv, forsvinder den herfra."));
+      for(const a of aktive()){ const b=anlBudget(a.id), brugtA=sumPris(mineKoeb(koeb(null,a.id)));
+        const sum=ps.reduce((t,p)=>t+budget(p.id,a.id),0);
+        ud.push(budRaekke(a.navn, restTekst(brugtA,b)+(sum? " · personer i alt "+kr(sum) : ""), budInput(a.id,b,"Intet budget",v=>{ saetAnlBudget(a.id,v); toast(v? "Budget for "+a.navn+": "+kr(v) : "Budget for "+a.navn+" er fjernet"); }))); }
+      return ud;
+    }
+    const pid=budPerson, pn=personNavn(pid), fb=fastBudget(pid), fr=fastBudgetRec(pid);
+    ud.push(el("div",{class:"muted"},"Budget til "+pn+". Det faste budget gælder alle anledninger, medmindre du skriver et andet beløb ud for en anledning. Kun du kan se det – medmindre du deler det inde på personen."));
+    ud.push(budRaekke("Fast budget", "Alle anledninger"+(fr&&(fr.deltMed||[]).length?" · 👥 delt":""), budInput(pid+"|fast",fb,"Intet",v=>{
+      const id=fr? fr.id : "pbud-"+migId()+"-"+pid;
+      gemBudget("pbud", id, fr? Object.assign({},fr,{beloeb:v}) : {personId:pid,beloeb:v,bruger:migId(),deltMed:[]}, v);
+      toast(v? "Fast budget til "+pn+": "+kr(v) : "Fast budget til "+pn+" er fjernet"); })));
+    for(const a of aktive()){ const br=egetBudgetRec(pid,a.id), b=br? Number(br.beloeb)||0 : 0, i=budgetInfo(pid,a.id);
+      ud.push(budRaekke(a.navn, restTekst(brugtMod(pid,a.id), budget(pid,a.id))+(i&&i.delt?" · 👥 delt":""), budInput(pid+"|"+a.id,b,fb? "Fast "+kr(fb).replace(" kr","") : "Intet",v=>{
+        const id=br? br.id : "bud-"+migId()+"-"+pid+"-"+a.id;
+        gemBudget("budget", id, br? Object.assign({},br,{beloeb:v}) : {personId:pid,anlId:a.id,beloeb:v,bruger:migId(),deltMed:[]}, v);
+        toast(v? pn+" · "+a.navn+": "+kr(v) : pn+" · "+a.navn+" bruger "+(fb?"det faste budget":"intet budget")); })));
+    }
+    return ud;
+  }
   function fold(noegle,titel,...ind){
     return el("details",{class:"card fold",open:indstAabne.has(noegle),ontoggle:e=>{ const d=e.target; if(d.open){ indstAabne=new Set([noegle]); $("ark").querySelectorAll("details.fold[open]").forEach(x=>{ if(x!==d) x.open=false; }); } else indstAabne.delete(noegle); }},
       el("summary",null,el("h2",null,titel)), el("div",{class:"foldInd"},...ind));
@@ -910,7 +948,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const startLink=()=>{ const o=!erLokal(location.hostname)? location.origin : (eksternAdr||location.origin); return o+"/gaver-start"; };
   const linkErLokal=()=>{ try{ return erLokal(new URL(startLink()).hostname); }catch(e){ return false; } };
   function indstArk(){
-    indstAabne=new Set(); budUdkast={};
+    indstAabne=new Set(); budUdkast={}; budPerson="";
     hentEksternAdr();
     const trin=[
       ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det, medmindre du deler det)."],
@@ -919,7 +957,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       ["Tilføj en gave","med + Gave. Skriv antal, hvis der ønskes flere stk. Vælg \"Jeg har købt den\" hvis den allerede er købt."],
       ["Køb ind","under 🛍️ Indkøb står alle idéer og ønsker, der mangler at blive købt. Tryk Købt ✓. Ønskes der 3 stk og er der købt 1, bliver den stående med \"2 mangler\"."],
       ["Budget","Oversigten viser hvad du har brugt, og hvad alle har brugt. En person bliver rød, hvis du er over dit budget."],
-      ["Budget for en hel anledning","under ⚙️ → 💰 Budget: skriv hvor meget du vil bruge i alt, fx på Jul 2026. Oversigten viser så, hvor meget du har tilbage."],
+      ["Budget","under ⚙️ → 💰 Budget: skriv hvor meget du vil bruge i alt på hver anledning, fx Jul 2026. Vælg en person øverst for at give netop den person et fast budget eller et beløb pr. anledning."],
       ["Del budget","fx med den anden forælder: tryk på personen → Ret person (eller på budgettet for én anledning) og vælg under \"Del budgettet med\". Den anden får et kort øverst på oversigten og skal trykke Godkend – indtil da står der ⏳ Venter. Bagefter kan I begge se og rette beløbet, jeres køb tæller sammen mod budgettet, og gaverne står som \"Købt af\" jer begge. Tryk Afvis for at sige nej tak."],
       ["Kigger nogen med?","tryk på personen → 🙈 Skjul. Det gælder kun på denne telefon."]
     ];
@@ -928,16 +966,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       fold("hvem","✋ Hvem er du?",
         mine.length? el("div",null,"Du er ",el("b",null,mine.map(p=>p.navn).join(", ")),". Du kan ikke se, hvad der er købt til dig.") : el("div",{class:"muted"},"Du har ikke valgt dit navn. Du kan kun vælge én gang."),
         mine.length? null : el("button",{type:"button",class:"btn",onclick:hvemArk},"Vælg mit navn")),
-      fold("budget","💰 Budget",
-        el("div",{class:"muted"},"Hvor meget vil du bruge i alt på hver anledning? Kun du kan se dit budget. Når en anledning er overstået og ligger i 📦 Arkiv, forsvinder den herfra."),
-        ...(aktive().length? aktive().map(a=>{ const brugtA=sumPris(mineKoeb(koeb(null,a.id))), b=anlBudget(a.id);
-          const inp=el("input",{type:"text",inputmode:"decimal",placeholder:"Intet budget",value:(a.id in budUdkast)? budUdkast[a.id] : (b? String(b).replace(".",",") : ""),style:"max-width:130px;text-align:right",
-            oninput:e=>{ budUdkast[a.id]=e.target.value; },
-            onchange:e=>{ const v=tal(e.target.value); delete budUdkast[a.id]; if(v===anlBudget(a.id)) return; saetAnlBudget(a.id,v); toast(v? "Budget for "+a.navn+": "+kr(v) : "Budget for "+a.navn+" er fjernet"); }});
-          return el("div",{class:"item",style:"cursor:default;align-items:center"},
-            el("div",{class:"txt"},el("span",{class:"navn"},a.navn), el("span",{class:"muted"},"Brugt "+kr(brugtA)+(b? (brugtA>b? " · "+kr(brugtA-b)+" over" : " · "+kr(b-brugtA)+" tilbage") : ""))),
-            el("div",{style:"display:flex;align-items:center;gap:6px"},inp,el("span",{class:"muted"},"kr"))); })
-          : [el("div",{class:"empty"},"Der er ingen aktive anledninger.")])),
+      fold("budget","💰 Budget", ...budgetIndhold()),
       erAdmin()? adminKort() : null,
       fold("del","🔗 Del",
         el("div",{style:"font-size:14px;word-break:break-all;user-select:all;-webkit-user-select:all"},link),
