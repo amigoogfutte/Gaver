@@ -178,7 +178,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.8.5";
+  const VERSION = "0.8.6";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -774,15 +774,19 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
           mangler(g)>0? el("button",{type:"button",class:"btn ok",onclick:()=>koebArk(g,null)},"🛒 Jeg har købt "+(oensket(g)>1? "nogle af dem":"den")) : null) : null,
         g&&!mit? (()=>{ const kv=kvitTil(g.id); const gen=()=>$("ark").replaceChildren(...tegn());
           const kamera=el("input",{type:"file",accept:"image/*",capture:"environment",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
-          const vaelg=el("input",{type:"file",accept:"image/*,application/pdf",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
+          const billeder=el("input",{type:"file",accept:"image/*",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
+          // Kun PDF: så åbner iPhone direkte appen Filer (der hvor man gemmer vedhæftninger fra Mail – "Overførsler") i stedet for billedmenuen
+          const vaelg=el("input",{type:"file",accept:"application/pdf,.pdf",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
           return el("div",{class:"card",style:"margin-top:0"},
             el("div",{class:"sekhead"},el("h3",null,"🧾 Kvittering"),kv.length? el("span",{class:"muted"},kv.length+" stk") : null),
             kv.length? el("div",{class:"kvitter"},...kv.map(k=>kvitKnap(k,()=>kvitArk(g,k)))) : el("div",{class:"muted"},"Kvitteringer kan ikke ses af "+personNavn(g.personId)+"."),
             kv.length? el("button",{type:"button",class:"btn ok",onclick:()=>sendKvit(g,kv)},"✉️ Send "+(kv.length>1?"alle "+kv.length+" ":"")+"på mail / SMS") : null,
             el("div",{class:"row",style:"display:flex;gap:8px"},
-              el("button",{type:"button",class:"btn",style:"flex:1",onclick:()=>kamera.click()},"📷 Tag billede"),
-              el("button",{type:"button",class:"btn",style:"flex:1",onclick:()=>vaelg.click()},"📁 Hent fil")),
-            kamera, vaelg); })() : null,
+              el("button",{type:"button",class:"btn",style:"flex:1;padding-left:6px;padding-right:6px",onclick:()=>kamera.click()},"📷 Kamera"),
+              el("button",{type:"button",class:"btn",style:"flex:1;padding-left:6px;padding-right:6px",onclick:()=>billeder.click()},"🖼️ Billeder"),
+              el("button",{type:"button",class:"btn",style:"flex:1;padding-left:6px;padding-right:6px",onclick:()=>vaelg.click()},"📁 Filer")),
+            el("div",{class:"muted",style:"font-size:13px"},"📁 Filer åbner appen Filer – kvitteringer fra mail ligger under Overførsler."),
+            kamera, billeder, vaelg); })() : null,
         el("button",{type:"button",class:"btn primary",onclick:()=>gem(false)},"Gem"),
         g? null : el("button",{type:"button",class:"btn",onclick:()=>gem(true)},"Gem og tilføj en til"),
         g&&(!andresKoeb||erAdmin())? el("button",{type:"button",class:"btn danger",onclick:()=>{
