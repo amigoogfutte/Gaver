@@ -128,6 +128,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   <!-- ===== Oversigt ===== -->
   <section id="v-oversigt">
     <div class="card hidden" id="hvemKort"></div>
+    <div id="indKort"></div>
     <div id="invKort"></div>
     <div class="chips" id="anlChips" style="margin-top:10px"></div>
     <div class="card" id="anlKort"></div>
@@ -178,7 +179,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.8.6";
+  const VERSION = "0.9.0";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -287,6 +288,81 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
   const venterTekst = r => r&&(r.inviteret||[]).length? "⏳ Venter på at "+ogListe(r.inviteret.map(u=>navnPaa(u)||"en bruger"))+" godkender" : "";
   // Invitationer til at dele et budget med mig
   const invitationer = () => [...levende("pbud"),...levende("budget")].filter(r=>(r.inviteret||[]).includes(migId()));
+  // ---- indbakke: kvitteringer sendt fra Mail med genvejen "Send til Gaver" ----
+  let indbakke=[], indNoegle=null, indHentes=false;
+  const indURL=new Map();
+  async function hentIndbakke(){
+    if(!HA||!navigator.onLine||indHentes) return; indHentes=true;
+    try{ const r=await api("/api/gaver/indbakke"); if(r.ok){ const j=await r.json(); const foer=JSON.stringify(indbakke.map(x=>x.id))+indNoegle;
+      indbakke=j.poster||[]; indNoegle=j.noegle||null; if(JSON.stringify(indbakke.map(x=>x.id))+indNoegle!==foer){ tegnIndKort(); if(aabentArk) aabentArk(); } } }
+    catch(e){} finally{ indHentes=false; }
+  }
+  async function indBlob(x){ const r=await api("/api/gaver/indbakke/"+encodeURIComponent(x.id)); if(!r.ok) throw new Error(r.status); return await r.blob(); }
+  const tidTekst=t=>{ const d=new Date(t); return d.getDate()+". "+MDR[d.getMonth()]+" kl. "+String(d.getHours()).padStart(2,"0")+"."+String(d.getMinutes()).padStart(2,"0"); };
+  function tegnIndKort(){
+    const k=$("indKort"); if(!k) return;
+    if(!indbakke.length){ k.replaceChildren(); return; }
+    k.replaceChildren(el("div",{class:"card",style:"cursor:pointer",onclick:indbakkeArk},
+      el("div",{style:"display:flex;flex-direction:row;align-items:center;gap:12px"},
+        el("span",{style:"font-size:28px"},"📥"),
+        el("div",{style:"flex:1;min-width:0"},el("b",null,indbakke.length===1? "1 kvittering venter" : indbakke.length+" kvitteringer venter"),el("div",{class:"muted"},"Sendt fra Mail – tryk for at lægge dem på gaverne")),
+        el("span",{class:"muted",style:"font-size:22px"},"›"))));
+  }
+  function gaveValg(){
+    const sel=el("select",null,el("option",{value:""},"Læg på gave …"));
+    for(const a of aktive()){
+      const gs=levende("gave").filter(g=>g.anlId===a.id && !erMig(g.personId)).sort((x,y)=>personNavn(x.personId).localeCompare(personNavn(y.personId),"da")||(x.tekst||"").localeCompare(y.tekst||"","da"));
+      if(gs.length) sel.appendChild(el("optgroup",{label:a.navn},...gs.map(g=>el("option",{value:g.id},personNavn(g.personId)+" – "+(g.tekst||"(uden navn)")))));
+    }
+    return sel;
+  }
+  function indbakkeArk(){
+    visArk(()=>[
+      top("📥 Kvitteringer der venter","Sendt fra Mail med genvejen. Vælg hvilken gave de hører til."),
+      ...(indbakke.length? indbakke.map(x=>{
+        const pdf=x.type==="application/pdf";
+        const vis=el("button",{type:"button",class:"kvit",onclick:async()=>{ try{ const u=indURL.get(x.id)||URL.createObjectURL(await indBlob(x)); indURL.set(x.id,u); const a=el("a",{href:u,target:"_blank",rel:"noopener"}); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ toast("Kan ikke hentes lige nu"); } }}, pdf? ["📄",el("small",null,"PDF")] : "🧾");
+        if(!pdf) (indURL.has(x.id)? Promise.resolve(indURL.get(x.id)) : indBlob(x).then(b=>{ const u=URL.createObjectURL(b); indURL.set(x.id,u); return u; })).then(u=>vis.replaceChildren(el("img",{src:u,alt:"Kvittering"}))).catch(()=>{});
+        const sel=gaveValg();
+        sel.onchange=async()=>{ const g=rec(sel.value); if(!g) return; sel.disabled=true;
+          try{ const b=await indBlob(x); const f=new File([b], x.navn||("kvittering"+(pdf?".pdf":".jpg")), {type:x.type});
+            const ok=await lagKvit(g,f,null);
+            if(ok){ await api("/api/gaver/indbakke/"+encodeURIComponent(x.id),{method:"DELETE"}); indbakke=indbakke.filter(y=>y.id!==x.id); tegnIndKort(); if(aabentArk) aabentArk(); toast("Lagt på "+(g.tekst||"gaven")+" til "+personNavn(g.personId)); }
+            else sel.disabled=false;
+          }catch(e){ toast("Kunne ikke hentes – prøv igen"); sel.disabled=false; } };
+        return el("div",{class:"card",style:"margin-top:0"}, el("div",{style:"display:flex;flex-direction:row;gap:12px;align-items:center"}, vis,
+          el("div",{style:"flex:1;display:flex;flex-direction:column;gap:8px;min-width:0"},
+            el("div",{class:"muted"},(x.navn? x.navn+" · " : "")+tidTekst(x.tid)), sel,
+            el("button",{type:"button",class:"btn danger",style:"padding:8px",onclick:async()=>{ if(!confirm("Slet kvitteringen fra indbakken?")) return; await api("/api/gaver/indbakke/"+encodeURIComponent(x.id),{method:"DELETE"}).catch(()=>{}); indbakke=indbakke.filter(y=>y.id!==x.id); tegnIndKort(); if(aabentArk) aabentArk(); }},"Slet"))));
+      }) : [el("div",{class:"empty"},"Indbakken er tom.")]),
+      el("button",{type:"button",class:"btn",onclick:lukArk},"Luk")
+    ], true);
+  }
+  function indAdresse(){ if(!indNoegle) return ""; const o=!erLokal(location.hostname)? location.origin : (eksternAdr||location.origin); return o+"/api/gaver/ind/"+indNoegle; }
+  function genvejIndhold(){
+    if(!HA) return [el("div",{class:"muted"},"Åbn Gaver via Home Assistant for at bruge genvejen.")];
+    if(!indNoegle){ hentIndbakke(); return [el("div",{class:"muted"},"Henter din adresse …")]; }
+    const adr=indAdresse();
+    const trin=[
+      "Åbn appen Genveje på iPhone, tryk + og kald genvejen \"Send til Gaver\".",
+      "Tryk på ⓘ nederst og slå \"Vis på Del-ark\" til. Vælg Billeder og PDF'er som typer.",
+      "Tryk \"Tilføj handling\", søg efter URL og vælg \"Hent indhold af URL\". Sæt adressen herunder ind som URL.",
+      "Tryk på pilen ved handlingen: Metode = POST, Anmodningens brødtekst = Fil, Fil = Genvejsinput.",
+      "Tilføj handlingen \"Vis besked\" (eller \"Vis resultat\") med \"Indhold af URL\", så får du ✓ når den er sendt.",
+      "I Mail: tryk på kvitteringen → Del → Send til Gaver. Åbn Gaver og læg den på gaven under 📥."
+    ];
+    return [
+      el("div",{class:"muted"},"Send kvitteringer direkte fra Mail til Gaver med en genvej. Det skal kun sættes op én gang."),
+      el("ol",{style:"margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px"},...trin.map(t=>el("li",null,t))),
+      el("div",{class:"muted"},"Din adresse (kun til dig – del den ikke):"),
+      el("div",{style:"font-size:13px;word-break:break-all;user-select:all;-webkit-user-select:all;background:var(--bg);padding:8px 10px;border-radius:10px"},adr),
+      linkErLokal()? el("div",{class:"muted"},"⚠️ Adressen virker kun hjemme. Den rigtige adresse kommer frem, når Home Assistant kender sin adresse udefra.") : null,
+      el("button",{type:"button",class:"btn primary",onclick:async()=>{ if(await kopier(adr)) toast("Adressen er kopieret"); else visTekst("Adresse til genvejen",adr); }},"Kopiér adresse"),
+      el("button",{type:"button",class:"btn",onclick:async()=>{ if(!confirm("Lav en ny adresse? Den gamle holder op med at virke, og du skal rette den i genvejen.")) return;
+        try{ const r=await api("/api/gaver/indbakke",{method:"POST"}); if(r.ok){ indNoegle=(await r.json()).noegle; toast("Ny adresse lavet – ret den i genvejen"); if(aabentArk) aabentArk(); } }catch(e){ toast("Kunne ikke lave ny adresse"); } }},"Lav ny adresse"),
+      indbakke.length? el("button",{type:"button",class:"btn ok",onclick:indbakkeArk},"📥 Se "+indbakke.length+" ventende") : null
+    ].filter(Boolean);
+  }
   function invKort(){
     const inv=invitationer().filter(r=>rec(r.personId));
     $("invKort").replaceChildren(...inv.map(r=>el("div",{class:"card"},
@@ -676,6 +752,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     try{
       if(db.dirty.includes(g.id)){ await sync(); }
       const data=pdf? fil : await komprimer(fil);
+      if(!pdf && /heic|heif/i.test(data.type||"")){ toast("Dette billede (HEIC) kan kun lægges på fra iPhone"); return; }
       const typ=pdf? "application/pdf" : (["image/jpeg","image/png","image/webp"].includes(data.type)? data.type : "image/jpeg");
       if(data.size>10*1024*1024){ toast("Filen er for stor (højst 10 MB)"); return; }
       const id=newId("kv");
@@ -684,7 +761,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       kvitURL.set(id, URL.createObjectURL(data));
       const gg=rec(g.id)||g;
       put(id,{kind:"kvit",gaveId:gg.id,personId:gg.personId,anlId:gg.anlId,type:typ,navn:pdf?(fil.name||"Kvittering.pdf"):"",oprettetAf:migId(),oprettetNavn:mig?mig.navn:"",oprettet:Date.now()});
-      toast("Kvitteringen er gemt"); efter&&efter();
+      toast("Kvitteringen er gemt"); efter&&efter(); return true;
     }catch(e){ toast(e&&e.login? "Log ind igen for at gemme kvitteringer" : "Kvitteringen kunne ikke gemmes – prøv igen"); }
   }
   function kvitKnap(k, aabn){
@@ -970,6 +1047,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     hentEksternAdr();
     const trin=[
       ["Tilføj personer","under 👥 Personer – også dem du deler listen med. Skriv gerne fødselsdag og dit eget budget (kun du kan se det, medmindre du deler det)."],
+      ["Kvitteringer fra Mail","sæt genvejen op under ⚙️ → 📥 Send kvitteringer fra Mail. Så kan du dele en kvittering fra Mail til Gaver, og den venter øverst på oversigten, til du lægger den på en gave."],
       ["Del listen","under 🔗 Del. De andre logger ind med deres egen Home Assistant-bruger og vælger deres navn under ✋ Hvem er du?. Så kan de ikke se, hvad der er købt til dem."],
       ["Ønsker","Når du har valgt dit navn, kan du skrive dine egne ønsker på dig selv. De bliver stående hos dig, også når nogen har købt dem."],
       ["Tilføj en gave","med + Gave. Skriv antal, hvis der ønskes flere stk. Vælg \"Jeg har købt den\" hvis den allerede er købt."],
@@ -986,6 +1064,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
         mine.length? null : el("button",{type:"button",class:"btn",onclick:hvemArk},"Vælg mit navn")),
       fold("budget","💰 Budget", ...budgetIndhold()),
       erAdmin()? adminKort() : null,
+      fold("genvej","📥 Send kvitteringer fra Mail", ...genvejIndhold()),
       fold("del","🔗 Del",
         el("div",{style:"font-size:14px;word-break:break-all;user-select:all;-webkit-user-select:all"},link),
         linkErLokal()? el("div",{class:"muted"},"⚠️ Det her link virker kun hjemme på jeres eget net. Sæt en ekstern adresse i Home Assistant (Indstillinger → System → Netværk), så virker det også ude.") : null,
@@ -1129,6 +1208,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       persist(); if(changed) renderAll();
       syncState.last=Date.now(); ls.set("gv_lastSync",syncState.last);
       if(minTur===syncTur) setSync("ok");
+      hentIndbakke();
     }catch(e){
       if(minTur!==syncTur) return;
       if(e.name==="AbortError") setSync("error","Serveren svarede ikke i tide");

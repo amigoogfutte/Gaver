@@ -1,5 +1,5 @@
 // Gemmer appen på enheden, så den virker uden internet.
-const CACHE = 'gaver-v22';
+const CACHE = 'gaver-v23';
 const FILES = ['./index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 const SCOPE = new URL('./', self.location).pathname;
 

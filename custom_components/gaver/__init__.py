@@ -11,7 +11,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import threading
+import time
 from pathlib import Path
 
 from aiohttp import web
@@ -186,6 +188,93 @@ class Store:
             elif meta.get("bruger") != uid:
                 return None  # endnu ikke synkroniseret: kun den der lagde den ind
             return f.read_bytes(), meta.get("type") or "application/octet-stream"
+
+    # ---- indbakke: kvitteringer sendt fra iPhone-genvejen (Del → Send til Gaver) ----
+    _IND_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
+
+    def _ind_dir(self) -> Path:
+        return self.root / "indbakke"
+
+    def _adresser(self) -> dict[str, str]:
+        try:
+            return json.loads((self._ind_dir() / "adresser.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def ind_noegle(self, uid: str, ny: bool = False) -> str:
+        """Den hemmelige nøgle i brugerens genvejs-adresse (laves første gang)."""
+        with self._laas:
+            a = self._adresser()
+            gammel = next((k for k, v in a.items() if v == uid), None)
+            if gammel and not ny:
+                return gammel
+            if gammel:
+                a.pop(gammel, None)
+            n = secrets.token_urlsafe(24)
+            a[n] = uid
+            self._ind_dir().mkdir(parents=True, exist_ok=True)
+            (self._ind_dir() / "adresser.json").write_text(json.dumps(a), encoding="utf-8")
+            return n
+
+    @staticmethod
+    def _gaet_type(indhold: bytes, typ: str) -> str | None:
+        if indhold[:5] == b"%PDF-":
+            return "application/pdf"
+        if indhold[:3] == b"\xff\xd8\xff":
+            return "image/jpeg"
+        if indhold[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if indhold[:4] == b"RIFF" and indhold[8:12] == b"WEBP":
+            return "image/webp"
+        if indhold[4:8] == b"ftyp" and indhold[8:12] in (b"heic", b"heix", b"mif1", b"msf1", b"heis", b"hevc"):
+            return "image/heic"
+        return None
+
+    INDTYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/heic": ".heic"}
+
+    def ind_gem(self, noegle: str, indhold: bytes, typ: str, navn: str) -> str | None:
+        with self._laas:
+            uid = self._adresser().get(noegle)
+            if not uid:
+                return "ukendt"
+            t = self._gaet_type(indhold, typ)
+            if not t:
+                return "type"
+            d = self._ind_dir() / uid
+            d.mkdir(parents=True, exist_ok=True)
+            if len(list(d.glob("*.json"))) >= 50:
+                return "fuld"
+            fid = f"ind-{int(time.time() * 1000):x}-{secrets.token_hex(3)}"
+            (d / f"{fid}{self.INDTYPER[t]}").write_bytes(indhold)
+            (d / f"{fid}.json").write_text(json.dumps({"id": fid, "type": t, "navn": navn[:120], "tid": int(time.time() * 1000), "str": len(indhold)}), encoding="utf-8")
+        return None
+
+    def ind_liste(self, uid: str) -> list[dict]:
+        d = self._ind_dir() / uid
+        ud = []
+        for m in d.glob("*.json") if d.exists() else []:
+            try:
+                ud.append(json.loads(m.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+        return sorted(ud, key=lambda x: x.get("tid", 0))
+
+    def ind_hent(self, uid: str, fid: str) -> tuple[bytes, str] | None:
+        if not _ID_RE.match(fid):
+            return None
+        d = self._ind_dir() / uid
+        try:
+            meta = json.loads((d / f"{fid}.json").read_text(encoding="utf-8"))
+            return (d / f"{fid}{self.INDTYPER[meta['type']]}").read_bytes(), meta["type"]
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def ind_slet(self, uid: str, fid: str) -> None:
+        if not _ID_RE.match(fid):
+            return
+        d = self._ind_dir() / uid
+        for f in d.glob(f"{fid}.*") if d.exists() else []:
+            f.unlink(missing_ok=True)
 
     def _laes(self) -> dict[str, dict]:
         f = self.root / FAELLES
@@ -467,6 +556,82 @@ class FilView(HomeAssistantView):
         return self.json({"ok": True})
 
 
+class IndView(HomeAssistantView):
+    """Offentlig adresse til iPhone-genvejen: POST /api/gaver/ind/<hemmelig nøgle> med filen som indhold."""
+
+    url = "/api/gaver/ind/{noegle}"
+    name = "api:gaver:ind"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant, store: Store) -> None:
+        self.hass = hass
+        self.store = store
+
+    async def post(self, request: web.Request, noegle: str) -> web.Response:
+        if not Store._IND_RE.match(noegle):
+            return web.Response(status=404, text="Ukendt adresse")
+        indhold = await request.read()
+        if not indhold:
+            return web.Response(status=400, text="Der kom ingen fil med – vælg Genvejsinput som Fil i genvejen")
+        if len(indhold) > MAX_FIL_BYTES:
+            return web.Response(status=413, text="Filen er for stor (højst 10 MB)")
+        navn = request.headers.get("X-Filnavn") or request.query.get("navn") or ""
+        fejl = await self.hass.async_add_executor_job(self.store.ind_gem, noegle, indhold, request.content_type or "", navn)
+        if fejl == "ukendt":
+            return web.Response(status=404, text="Adressen er ikke gyldig længere – kopiér den nye fra Gaver")
+        if fejl == "type":
+            return web.Response(status=415, text="Gaver kan kun modtage PDF og billeder")
+        if fejl == "fuld":
+            return web.Response(status=507, text="Indbakken er fuld – læg nogle af kvitteringerne på gaver først")
+        return web.Response(text="✓ Kvitteringen er sendt til Gaver")
+
+    async def get(self, request: web.Request, noegle: str) -> web.Response:
+        return web.Response(text="Gaver: Brug adressen i en genvej (POST).")
+
+
+class IndbakkeView(HomeAssistantView):
+    """GET liste + din genvejs-adresse; POST {ny:true} laver en ny adresse."""
+
+    url = "/api/gaver/indbakke"
+    name = "api:gaver:indbakke"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant, store: Store) -> None:
+        self.hass = hass
+        self.store = store
+
+    async def get(self, request: web.Request) -> web.Response:
+        uid = request["hass_user"].id
+        liste = await self.hass.async_add_executor_job(self.store.ind_liste, uid)
+        noegle = await self.hass.async_add_executor_job(self.store.ind_noegle, uid)
+        return self.json({"poster": liste, "noegle": noegle})
+
+    async def post(self, request: web.Request) -> web.Response:
+        uid = request["hass_user"].id
+        noegle = await self.hass.async_add_executor_job(self.store.ind_noegle, uid, True)
+        return self.json({"noegle": noegle})
+
+
+class IndFilView(HomeAssistantView):
+    url = "/api/gaver/indbakke/{fid}"
+    name = "api:gaver:indbakke:fil"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant, store: Store) -> None:
+        self.hass = hass
+        self.store = store
+
+    async def get(self, request: web.Request, fid: str) -> web.Response:
+        res = await self.hass.async_add_executor_job(self.store.ind_hent, request["hass_user"].id, fid)
+        if not res:
+            return self.json_message("Findes ikke", 404)
+        return web.Response(body=res[0], content_type=res[1], headers={"Cache-Control": "private, max-age=3600"})
+
+    async def delete(self, request: web.Request, fid: str) -> web.Response:
+        await self.hass.async_add_executor_job(self.store.ind_slet, request["hass_user"].id, fid)
+        return self.json({"ok": True})
+
+
 class LinkView(HomeAssistantView):
     """Home Assistants adresse udefra (egen ekstern adresse eller Nabu Casa), til del-linket."""
 
@@ -507,7 +672,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not data.get("http_registered"):
         # HTTP-ruter kan ikke fjernes igen, så de registreres kun én gang pr. opstart.
         await hass.http.async_register_static_paths([StaticPathConfig(APP_URL, str(WWW), False)])
-        for view in (SyncView(hass, store), MigView(hass, store), BrugereView(hass, store), LinkView(hass), FilView(hass, store), AppRedirectView()):
+        for view in (SyncView(hass, store), MigView(hass, store), BrugereView(hass, store), LinkView(hass), FilView(hass, store), IndView(hass, store), IndbakkeView(hass, store), IndFilView(hass, store), AppRedirectView()):
             hass.http.register_view(view)
         data["http_registered"] = True
 
