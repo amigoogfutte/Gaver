@@ -179,7 +179,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.9.1";
+  const VERSION = "0.9.2";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -745,7 +745,16 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       img.src=u;
     });
   }
-  async function lagKvit(g, fil, efter){
+  const kvitNavn = k => String(k&&k.navn||"").replace(/\.(pdf|jpe?g|png|webp|heic)$/i,"").trim();
+  // Spørg hvad kvitteringen er til, før den gemmes (Annullér = gem ikke)
+  function spoergOgLag(g, fil, efter){
+    if(!fil) return;
+    const forslag=(fil.name&&!/^(image|img_\d|photo|kvittering)\b/i.test(fil.name))? fil.name.replace(/\.(pdf|jpe?g|png|webp|heic)$/i,"") : "";
+    const svar=prompt("Hvor er kvitteringen fra?", forslag);
+    if(svar===null){ toast("Kvitteringen blev ikke gemt"); return; }
+    lagKvit(g, fil, efter, svar.trim());
+  }
+  async function lagKvit(g, fil, efter, navnValgt){
     if(!fil) return;
     if(!HA){ toast("Kvitteringer gemmes på serveren – åbn appen via Home Assistant"); return; }
     if(!navigator.onLine){ toast("Kvitteringer kræver forbindelse – prøv igen, når du er online"); return; }
@@ -763,15 +772,16 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       if(!r.ok){ let m="Kvitteringen kunne ikke gemmes"; try{ m=(await r.json()).message||m; }catch(e){} toast(m); return; }
       kvitURL.set(id, URL.createObjectURL(data));
       const gg=rec(g.id)||g;
-      put(id,{kind:"kvit",gaveId:gg.id,personId:gg.personId,anlId:gg.anlId,type:typ,navn:(fil.name&&!/^(image|img_\d|photo|kvittering)\b/i.test(fil.name))? fil.name : (pdf?"Kvittering.pdf":""),oprettetAf:migId(),oprettetNavn:mig?mig.navn:"",oprettet:Date.now()});
+      put(id,{kind:"kvit",gaveId:gg.id,personId:gg.personId,anlId:gg.anlId,type:typ,navn:(navnValgt!=null&&navnValgt!=="")? navnValgt : ((fil.name&&!/^(image|img_\d|photo|kvittering)\b/i.test(fil.name))? fil.name : (pdf?"Kvittering.pdf":"")),oprettetAf:migId(),oprettetNavn:mig?mig.navn:"",oprettet:Date.now()});
       toast("Kvitteringen er gemt"); efter&&efter(); return true;
     }catch(e){ toast(e&&e.login? "Log ind igen for at gemme kvitteringer" : "Kvitteringen kunne ikke gemmes – prøv igen"); }
   }
   function kvitKnap(k, aabn){
     const pdf=k.type==="application/pdf";
-    const b=el("button",{type:"button",class:"kvit",title:pdf?(k.navn||"PDF"):"Kvittering",onclick:aabn}, pdf? ["📄",el("small",null,"PDF")] : "🧾");
+    const b=el("button",{type:"button",class:"kvit",title:kvitNavn(k)||(pdf?"PDF":"Kvittering"),onclick:aabn}, pdf? ["📄",el("small",null,"PDF")] : "🧾");
     if(!pdf) kvitBlobURL(k).then(u=>b.replaceChildren(el("img",{src:u,alt:"Kvittering"}))).catch(()=>{});
-    return b;
+    const n=kvitNavn(k);
+    return el("div",{style:"display:flex;flex-direction:column;gap:3px;width:84px"}, b, n? el("div",{style:"font-size:12px;line-height:1.2;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap",title:n},n) : null);
   }
   // Send kvitteringer via telefonens del-menu (Mail, Beskeder/SMS …). Uden del-menu hentes filen i stedet.
   const kvitFilnavn=(g,k,i)=> k.type==="application/pdf"? (k.navn||"kvittering.pdf") : "Kvittering "+(g.tekst||"gave").replace(/[^\wæøåÆØÅ -]/g,"").trim()+(i?" "+(i+1):"")+(k.type==="image/png"?".png":k.type==="image/webp"?".webp":".jpg");
@@ -795,7 +805,8 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       .catch(()=>{ indhold.textContent="Kvitteringen kan ikke hentes lige nu – prøv igen, når der er forbindelse."; });
     const egen=k.oprettetAf===migId()||erAdmin();
     visArk(()=>[
-      top("Kvittering",(g.tekst||"")+" · "+personNavn(g.personId)+(k.oprettetNavn? " · lagt ind af "+k.oprettetNavn : "")),
+      top(kvitNavn(k)||"Kvittering",(g.tekst||"")+" · "+personNavn(g.personId)+(k.oprettetNavn? " · lagt ind af "+k.oprettetNavn : "")),
+      egen? felt("Hvor er kvitteringen fra?", el("input",{type:"text",value:kvitNavn(k),placeholder:"fx Elgiganten",onchange:e=>{ const kk=rec(k.id); if(!kk) return; put(kk.id,Object.assign({},kk,{navn:e.target.value.trim()})); toast("Navnet er gemt"); }})) : null,
       indhold,
       el("button",{type:"button",class:"btn primary",onclick:async()=>{ try{ const u=url||await kvitBlobURL(k); const a=el("a",{href:u,download:pdf?(k.navn||"kvittering.pdf"):"kvittering-"+(g.tekst||"gave").replace(/[^\wæøåÆØÅ -]/g,"")+".jpg",target:"_blank",rel:"noopener"}); document.body.appendChild(a); a.click(); a.remove(); }catch(e){ toast("Kan ikke hentes lige nu"); } }},pdf?"Åbn PDF":"Gem / åbn billede"),
       el("button",{type:"button",class:"btn ok",onclick:()=>sendKvit(g,[k])},"✉️ Send på mail / SMS"),
@@ -853,10 +864,10 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
             el("div",{class:"tal"},kr(k.pris)))) : [el("div",{class:"empty"},"Ingen har købt den endnu.")]),
           mangler(g)>0? el("button",{type:"button",class:"btn ok",onclick:()=>koebArk(g,null)},"🛒 Jeg har købt "+(oensket(g)>1? "nogle af dem":"den")) : null) : null,
         g&&!mit? (()=>{ const kv=kvitTil(g.id); const gen=()=>$("ark").replaceChildren(...tegn());
-          const kamera=el("input",{type:"file",accept:"image/*",capture:"environment",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
-          const billeder=el("input",{type:"file",accept:"image/*",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
+          const kamera=el("input",{type:"file",accept:"image/*",capture:"environment",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; spoergOgLag(g,f,gen); }});
+          const billeder=el("input",{type:"file",accept:"image/*",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; spoergOgLag(g,f,gen); }});
           // Kun PDF: så åbner iPhone direkte appen Filer (der hvor man gemmer vedhæftninger fra Mail – "Overførsler") i stedet for billedmenuen
-          const vaelg=el("input",{type:"file",accept:"application/pdf,.pdf",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; lagKvit(g,f,gen); }});
+          const vaelg=el("input",{type:"file",accept:"application/pdf,.pdf",class:"hidden",onchange:e=>{ const f=e.target.files[0]; e.target.value=""; spoergOgLag(g,f,gen); }});
           return el("div",{class:"card",style:"margin-top:0"},
             el("div",{class:"sekhead"},el("h3",null,"🧾 Kvittering"),kv.length? el("span",{class:"muted"},kv.length+" stk") : null),
             kv.length? el("div",{class:"kvitter"},...kv.map(k=>kvitKnap(k,()=>kvitArk(g,k)))) : el("div",{class:"muted"},"Kvitteringer kan ikke ses af "+personNavn(g.personId)+"."),
