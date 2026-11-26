@@ -269,6 +269,19 @@ class Store:
         except (OSError, ValueError, KeyError):
             return None
 
+    def ind_omdoeb(self, uid: str, fid: str, navn: str) -> bool:
+        if not _ID_RE.match(fid):
+            return False
+        m = self._ind_dir() / uid / f"{fid}.json"
+        with self._laas:
+            try:
+                meta = json.loads(m.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return False
+            meta["navn"] = (navn or "").strip()[:120]
+            m.write_text(json.dumps(meta), encoding="utf-8")
+        return True
+
     def ind_slet(self, uid: str, fid: str) -> None:
         if not _ID_RE.match(fid):
             return
@@ -556,6 +569,19 @@ class FilView(HomeAssistantView):
         return self.json({"ok": True})
 
 
+def _ret_tekst(t: str) -> str:
+    """Navn fra genvejen: headers kan komme som rå UTF-8-bytes – lav æøå om til rigtige tegn."""
+    t = (t or "").strip()
+    for enc in ("utf-8", "latin-1"):
+        try:
+            t2 = t.encode(enc, "surrogateescape").decode("utf-8")
+            if t2 != t:
+                return t2.strip()[:120]
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+    return t[:120]
+
+
 class IndView(HomeAssistantView):
     """Offentlig adresse til iPhone-genvejen: POST /api/gaver/ind/<hemmelig nøgle> med filen som indhold."""
 
@@ -575,7 +601,7 @@ class IndView(HomeAssistantView):
             return web.Response(status=400, text="Der kom ingen fil med – vælg Genvejsinput som Fil i genvejen")
         if len(indhold) > MAX_FIL_BYTES:
             return web.Response(status=413, text="Filen er for stor (højst 10 MB)")
-        navn = request.headers.get("X-Filnavn") or request.query.get("navn") or ""
+        navn = _ret_tekst(request.headers.get("X-Filnavn") or request.query.get("navn") or "")
         fejl = await self.hass.async_add_executor_job(self.store.ind_gem, noegle, indhold, request.content_type or "", navn)
         if fejl == "ukendt":
             return web.Response(status=404, text="Adressen er ikke gyldig længere – kopiér den nye fra Gaver")
@@ -630,6 +656,14 @@ class IndFilView(HomeAssistantView):
     async def delete(self, request: web.Request, fid: str) -> web.Response:
         await self.hass.async_add_executor_job(self.store.ind_slet, request["hass_user"].id, fid)
         return self.json({"ok": True})
+
+    async def post(self, request: web.Request, fid: str) -> web.Response:
+        try:
+            body = await request.json()
+        except ValueError:
+            return self.json_message("Ugyldig", 400)
+        ok = await self.hass.async_add_executor_job(self.store.ind_omdoeb, request["hass_user"].id, fid, str(body.get("navn") or ""))
+        return self.json({"ok": ok}, status_code=200 if ok else 404)
 
 
 class LinkView(HomeAssistantView):

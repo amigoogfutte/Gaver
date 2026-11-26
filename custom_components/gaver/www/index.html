@@ -179,7 +179,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
 <script>
 (function(){
   "use strict";
-  const VERSION = "0.9.0";
+  const VERSION = "0.9.1";
   const $ = id => document.getElementById(id);
   function el(tag, attrs, ...kids){
     const e=document.createElement(tag);
@@ -305,7 +305,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
     k.replaceChildren(el("div",{class:"card",style:"cursor:pointer",onclick:indbakkeArk},
       el("div",{style:"display:flex;flex-direction:row;align-items:center;gap:12px"},
         el("span",{style:"font-size:28px"},"📥"),
-        el("div",{style:"flex:1;min-width:0"},el("b",null,indbakke.length===1? "1 kvittering venter" : indbakke.length+" kvitteringer venter"),el("div",{class:"muted"},"Sendt fra Mail – tryk for at lægge dem på gaverne")),
+        el("div",{style:"flex:1;min-width:0"},el("b",null,indbakke.length===1? "1 kvittering venter" : indbakke.length+" kvitteringer venter"),el("div",{class:"muted"},(()=>{ const n=indbakke.map(x=>x.navn).filter(Boolean); return n.length? n.slice(0,3).join(" · ")+(n.length>3?" …":"") : "Sendt fra Mail – tryk for at lægge dem på gaverne"; })())),
         el("span",{class:"muted",style:"font-size:22px"},"›"))));
   }
   function gaveValg(){
@@ -325,14 +325,16 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
         if(!pdf) (indURL.has(x.id)? Promise.resolve(indURL.get(x.id)) : indBlob(x).then(b=>{ const u=URL.createObjectURL(b); indURL.set(x.id,u); return u; })).then(u=>vis.replaceChildren(el("img",{src:u,alt:"Kvittering"}))).catch(()=>{});
         const sel=gaveValg();
         sel.onchange=async()=>{ const g=rec(sel.value); if(!g) return; sel.disabled=true;
-          try{ const b=await indBlob(x); const f=new File([b], x.navn||("kvittering"+(pdf?".pdf":".jpg")), {type:x.type});
+          try{ const b=await indBlob(x); const f=new File([b], x.navn? x.navn+(pdf?".pdf":".jpg") : ("kvittering"+(pdf?".pdf":".jpg")), {type:x.type});
             const ok=await lagKvit(g,f,null);
             if(ok){ await api("/api/gaver/indbakke/"+encodeURIComponent(x.id),{method:"DELETE"}); indbakke=indbakke.filter(y=>y.id!==x.id); tegnIndKort(); if(aabentArk) aabentArk(); toast("Lagt på "+(g.tekst||"gaven")+" til "+personNavn(g.personId)); }
             else sel.disabled=false;
           }catch(e){ toast("Kunne ikke hentes – prøv igen"); sel.disabled=false; } };
         return el("div",{class:"card",style:"margin-top:0"}, el("div",{style:"display:flex;flex-direction:row;gap:12px;align-items:center"}, vis,
           el("div",{style:"flex:1;display:flex;flex-direction:column;gap:8px;min-width:0"},
-            el("div",{class:"muted"},(x.navn? x.navn+" · " : "")+tidTekst(x.tid)), sel,
+            el("input",{type:"text",value:x.navn||"",placeholder:"Hvad er det? fx JBL højtaler",style:"font-weight:600",
+              onchange:async e=>{ const n=e.target.value.trim(); x.navn=n; try{ await api("/api/gaver/indbakke/"+encodeURIComponent(x.id),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({navn:n})}); }catch(err){} tegnIndKort(); }}),
+            el("div",{class:"muted"},tidTekst(x.tid)), sel,
             el("button",{type:"button",class:"btn danger",style:"padding:8px",onclick:async()=>{ if(!confirm("Slet kvitteringen fra indbakken?")) return; await api("/api/gaver/indbakke/"+encodeURIComponent(x.id),{method:"DELETE"}).catch(()=>{}); indbakke=indbakke.filter(y=>y.id!==x.id); tegnIndKort(); if(aabentArk) aabentArk(); }},"Slet"))));
       }) : [el("div",{class:"empty"},"Indbakken er tom.")]),
       el("button",{type:"button",class:"btn",onclick:lukArk},"Luk")
@@ -349,6 +351,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       "Tryk \"Tilføj handling\", søg efter URL og vælg \"Hent indhold af URL\". Sæt adressen herunder ind som URL.",
       "Tryk på pilen ved handlingen: Metode = POST, Anmodningens brødtekst = Fil, Fil = Genvejsinput.",
       "Tilføj handlingen \"Vis besked\" (eller \"Vis resultat\") med \"Indhold af URL\", så får du ✓ når den er sendt.",
+      "Vil du skrive hvad det er? Tilføj \"Spørg efter input\" og træk den op over \"Hent indhold af\". Under Headers i \"Hent indhold af\" tilføjer du nøglen X-Filnavn med værdien \"Angivet input\".",
       "I Mail: tryk på kvitteringen → Del → Send til Gaver. Åbn Gaver og læg den på gaven under 📥."
     ];
     return [
@@ -760,7 +763,7 @@ nav.tabs .badge{position:absolute;top:4px;right:calc(50% - 30px);background:var(
       if(!r.ok){ let m="Kvitteringen kunne ikke gemmes"; try{ m=(await r.json()).message||m; }catch(e){} toast(m); return; }
       kvitURL.set(id, URL.createObjectURL(data));
       const gg=rec(g.id)||g;
-      put(id,{kind:"kvit",gaveId:gg.id,personId:gg.personId,anlId:gg.anlId,type:typ,navn:pdf?(fil.name||"Kvittering.pdf"):"",oprettetAf:migId(),oprettetNavn:mig?mig.navn:"",oprettet:Date.now()});
+      put(id,{kind:"kvit",gaveId:gg.id,personId:gg.personId,anlId:gg.anlId,type:typ,navn:(fil.name&&!/^(image|img_\d|photo|kvittering)\b/i.test(fil.name))? fil.name : (pdf?"Kvittering.pdf":""),oprettetAf:migId(),oprettetNavn:mig?mig.navn:"",oprettet:Date.now()});
       toast("Kvitteringen er gemt"); efter&&efter(); return true;
     }catch(e){ toast(e&&e.login? "Log ind igen for at gemme kvitteringer" : "Kvitteringen kunne ikke gemmes – prøv igen"); }
   }
